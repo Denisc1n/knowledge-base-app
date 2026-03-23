@@ -1,0 +1,14 @@
+# App settings (secrets)
+src/KnowledgeBase.Api/appsettings.json
+
+# But keep example files
+!appsettings.Development.json
+
+# Build outputs
+bin/
+obj/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
