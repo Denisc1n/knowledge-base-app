@@ -12,3 +12,6 @@ obj/
 .vs/
 *.user
 *.suo
+/.dotnet-home/.dotnet
+/.nuget/packages
+/.appdata/NuGet
