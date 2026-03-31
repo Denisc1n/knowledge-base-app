@@ -1,11 +1,8 @@
-﻿using KnowledgeBase.Domain.Abstractions;
+using KnowledgeBase.Domain.Abstractions;
 using KnowledgeBase.Domain.Entities;
 using KnowledgeBase.Domain.Enums;
 using KnowledgeBase.Infrastructure.Persistence;
 using MongoDB.Driver;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace KnowledgeBase.Infrastructure.Repositories
 {
@@ -24,34 +21,37 @@ namespace KnowledgeBase.Infrastructure.Repositories
             return note;
         }
 
-        public async Task<IReadOnlyList<Note>> GetAllAsync(CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<Note>> GetAllAsync(string userId, CancellationToken cancellationToken = default)
         {
             return await _context.Notes
-                .Find(_ => true)
+                .Find(x => x.UserId == userId)
                 .SortByDescending(x => x.UpdatedAtUtc)
                 .ToListAsync(cancellationToken);
         }
 
-        public async Task<Note?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
+        public async Task<Note?> GetByIdAsync(string id, string userId, CancellationToken cancellationToken = default)
         {
             return await _context.Notes
-                .Find(x => x.Id == id)
+                .Find(x => x.Id == id && x.UserId == userId)
                 .FirstOrDefaultAsync(cancellationToken);
         }
 
-        public async Task<IReadOnlyList<Note>> SearchAsync(string query, CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<Note>> SearchAsync(string query, string userId, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(query))
                 return Array.Empty<Note>();
 
             var lowered = query.Trim().ToLowerInvariant();
 
-            var filter = Builders<Note>.Filter.Or(
+            var ownershipFilter = Builders<Note>.Filter.Eq(x => x.UserId, userId);
+            var contentFilter = Builders<Note>.Filter.Or(
                 Builders<Note>.Filter.Regex(x => x.Title, new MongoDB.Bson.BsonRegularExpression(lowered, "i")),
                 Builders<Note>.Filter.Regex(x => x.Content, new MongoDB.Bson.BsonRegularExpression(lowered, "i")),
                 Builders<Note>.Filter.AnyEq(x => x.Tags, lowered),
                 Builders<Note>.Filter.Regex(x => x.Category, new MongoDB.Bson.BsonRegularExpression(lowered, "i"))
             );
+
+            var filter = Builders<Note>.Filter.And(ownershipFilter, contentFilter);
 
             return await _context.Notes
                 .Find(filter)
@@ -62,21 +62,22 @@ namespace KnowledgeBase.Infrastructure.Repositories
         public async Task<bool> UpdateAsync(Note note, CancellationToken cancellationToken = default)
         {
             var result = await _context.Notes.ReplaceOneAsync(
-                x => x.Id == note.Id,
+                x => x.Id == note.Id && x.UserId == note.UserId,
                 note,
                 cancellationToken: cancellationToken);
 
             return result.ModifiedCount > 0;
         }
 
-        public async Task<bool> DeleteAsync(string id, CancellationToken cancellationToken = default)
+        public async Task<bool> DeleteAsync(string id, string userId, CancellationToken cancellationToken = default)
         {
-            var result = await _context.Notes.DeleteOneAsync(x => x.Id == id, cancellationToken);
+            var result = await _context.Notes.DeleteOneAsync(x => x.Id == id && x.UserId == userId, cancellationToken);
             return result.DeletedCount > 0;
         }
 
         public async Task<bool> PatchAsync(
             string id,
+            string userId,
             string? title,
             string? content,
             List<string>? tags,
@@ -107,7 +108,7 @@ namespace KnowledgeBase.Infrastructure.Repositories
             var combinedUpdate = Builders<Note>.Update.Combine(updates);
 
             var result = await _context.Notes.UpdateOneAsync(
-                x => x.Id == id,
+                x => x.Id == id && x.UserId == userId,
                 combinedUpdate,
                 cancellationToken: cancellationToken);
 

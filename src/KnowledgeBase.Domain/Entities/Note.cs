@@ -12,6 +12,7 @@ namespace KnowledgeBase.Domain.Entities
         [BsonId]
         [BsonRepresentation(BsonType.ObjectId)]
         public string Id { get; set; } = default!;
+        public string UserId { get; set; } = default!;
         public string Title { get; set; } = default!;
         public string Content { get; set; } = default!;
         public List<string> Tags { get; set; } = new();

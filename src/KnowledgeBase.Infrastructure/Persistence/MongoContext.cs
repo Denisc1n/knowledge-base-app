@@ -1,25 +1,55 @@
-﻿using KnowledgeBase.Domain.Entities;
+using KnowledgeBase.Domain.Entities;
 using Microsoft.Extensions.Options;
 using MongoDB.Driver;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
-namespace KnowledgeBase.Infrastructure.Persistence
+namespace KnowledgeBase.Infrastructure.Persistence;
+
+public class MongoContext
 {
-    public class MongoContext
+    private readonly IMongoDatabase _database;
+    private readonly MongoDbSettings _settings;
+
+    public MongoContext(IOptions<MongoDbSettings> options)
     {
-        private readonly IMongoDatabase _database;
-        private readonly MongoDbSettings _settings;
+        _settings = options.Value;
+        var client = new MongoClient(_settings.ConnectionString);
+        _database = client.GetDatabase(_settings.DatabaseName);
+        EnsureIndexes();
+    }
 
-        public MongoContext(IOptions<MongoDbSettings> options)
-        {
-            _settings = options.Value;
-            var client = new MongoClient(_settings.ConnectionString);
-            _database = client.GetDatabase(_settings.DatabaseName);
-        }
+    public IMongoCollection<Note> Notes =>
+        _database.GetCollection<Note>(_settings.NotesCollectionName);
 
-        public IMongoCollection<Note> Notes =>
-            _database.GetCollection<Note>(_settings.NotesCollectionName);
+    public IMongoCollection<User> Users =>
+        _database.GetCollection<User>(_settings.UsersCollectionName);
+
+    public IMongoCollection<RefreshSession> RefreshSessions =>
+        _database.GetCollection<RefreshSession>(_settings.RefreshSessionsCollectionName);
+
+    private void EnsureIndexes()
+    {
+        var usernameIndex = new CreateIndexModel<User>(
+            Builders<User>.IndexKeys.Ascending(x => x.Username),
+            new CreateIndexOptions { Unique = true });
+
+        var emailIndex = new CreateIndexModel<User>(
+            Builders<User>.IndexKeys.Ascending(x => x.Email),
+            new CreateIndexOptions { Unique = true });
+
+        Users.Indexes.CreateMany([usernameIndex, emailIndex]);
+
+        var noteUserIdIndex = new CreateIndexModel<Note>(
+            Builders<Note>.IndexKeys.Ascending(x => x.UserId));
+
+        Notes.Indexes.CreateOne(noteUserIdIndex);
+
+        var tokenHashIndex = new CreateIndexModel<RefreshSession>(
+            Builders<RefreshSession>.IndexKeys.Ascending(x => x.TokenHash),
+            new CreateIndexOptions { Unique = true });
+
+        var userIdIndex = new CreateIndexModel<RefreshSession>(
+            Builders<RefreshSession>.IndexKeys.Ascending(x => x.UserId));
+
+        RefreshSessions.Indexes.CreateMany([tokenHashIndex, userIdIndex]);
     }
 }

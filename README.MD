@@ -1,143 +1,187 @@
-📚 Knowledge Base App
+# Knowledge Base App
 
-A full-stack knowledge base application built with ASP.NET Core, MongoDB, and React.
-This project demonstrates clean architecture, RESTful API design, and NoSQL data modeling.
+A knowledge base API built with ASP.NET Core and MongoDB, designed to be consumed by a React frontend running in the browser.
 
-🚀 Overview
+## Overview
 
-The Knowledge Base App allows users to create, manage, search, and organize notes efficiently.
+The application allows authenticated users to:
 
-It is designed as a portfolio project to showcase:
+- sign up and log in
+- manage their own notes
+- search and organize notes
+- keep long-lived browser sessions through access-token refresh
 
-Clean Architecture in .NET
-NoSQL (MongoDB) integration
-REST API best practices (CRUD + PATCH)
-Validation and structured layering
-Full-stack integration with React
-🧱 Architecture
+## Architecture
 
-The backend follows a Clean Architecture (layered) approach:
+The backend follows a layered architecture with Clean Architecture principles.
 
-src/
-  KnowledgeBase.Api            → HTTP layer (controllers, contracts)
-  KnowledgeBase.Application    → Business logic, services, validation
-  KnowledgeBase.Domain         → Core entities and interfaces
-  KnowledgeBase.Infrastructure → Database and external services
-🔄 Flow
-Controller → Service → Repository → MongoDB
-⚙️ Tech Stack
-Backend
-ASP.NET Core Web API (.NET)
-MongoDB Atlas
-MongoDB.Driver
-FluentValidation
-Swagger / OpenAPI
-Frontend
-React (planned / in progress)
-TypeScript
-Vite
-📦 Features
-✅ Implemented
-Create, read, update, delete notes
-Partial updates using PATCH
-Search notes (title, content, tags, category)
-Input validation with FluentValidation
-Clean architecture separation
-MongoDB integration
-🚧 Planned / Improvements
-Pagination & filtering
-Authentication (JWT)
-Note version history
-Markdown support
-Favorites / pinned notes
-Docker support
-Full React frontend
-🧾 API Endpoints
-Notes
-Method	Endpoint	Description
-POST	/api/notes	Create a note
-GET	/api/notes	Get all notes
-GET	/api/notes/{id}	Get note by id
-PUT	/api/notes/{id}	Full update
-PATCH	/api/notes/{id}	Partial update
-DELETE	/api/notes/{id}	Delete note
-GET	/api/notes/search?q=	Search notes
-🧠 Example Requests
-Create Note
-{
-  "title": "Intro to CQRS",
-  "content": "CQRS separates commands from queries.",
-  "tags": ["architecture", "cqrs", "dotnet"],
-  "category": "Backend",
-  "status": 1
-}
-Patch Note
-{
-  "title": "Updated CQRS Notes"
-}
-⚙️ Configuration
-🔐 Environment Setup
+- `KnowledgeBase.Api`: HTTP transport layer, controllers, request/response contracts, auth middleware setup
+- `KnowledgeBase.Application`: use cases, DTOs, validation, and service orchestration
+- `KnowledgeBase.Domain`: core entities and repository abstractions
+- `KnowledgeBase.Infrastructure`: MongoDB persistence, JWT generation, password hashing, refresh-token support
+- `KnowledgeBase.Application.UnitTests`: unit tests using `xUnit` and `NSubstitute`
 
-This project uses local configuration for secrets.
+### Dependency Direction
 
-Create a file:
+```mermaid
+flowchart LR
+    API["KnowledgeBase.Api"] --> APP["KnowledgeBase.Application"]
+    APP --> DOMAIN["KnowledgeBase.Domain"]
+    INFRA["KnowledgeBase.Infrastructure"] --> APP
+    INFRA --> DOMAIN
+    API --> INFRA
+    INFRA --> DB[("MongoDB")]
+```
 
-src/KnowledgeBase.Api/appsettings.json
+### Request Flow
 
-Or use the example:
+```mermaid
+flowchart LR
+    Client["React Client"] --> Controller["API Controller"]
+    Controller --> Service["Application Service"]
+    Service --> Repo["Repository Abstraction"]
+    Repo --> Mongo["MongoDB"]
+```
 
-cp appsettings.Example.json appsettings.json
-Example Configuration
+## Authentication and Sessions
+
+The API uses JWT access tokens plus refresh sessions.
+
+- access tokens are short-lived and sent in the `Authorization: Bearer <token>` header
+- refresh tokens are long-lived and stored server-side as hashed values in the `refreshSessions` collection
+- the browser receives the refresh token through an `HttpOnly` cookie
+- the React frontend should call auth endpoints with `credentials: 'include'`
+- refresh-token rotation is used, so each refresh invalidates the previous refresh token
+
+### Auth Endpoints
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `POST` | `/api/auth/signup` | Create a new user |
+| `POST` | `/api/auth/login` | Return an access token and set refresh-token cookie |
+| `POST` | `/api/auth/refresh` | Rotate refresh token and return a new access token |
+| `POST` | `/api/auth/logout` | Revoke refresh session and clear refresh-token cookie |
+
+## Notes and Ownership
+
+Notes are user-owned.
+
+- each note stores a `UserId`
+- the API reads the authenticated user id from JWT claims
+- all note queries are filtered by both `note.Id` and `note.UserId` when relevant
+- a user can only read, search, update, patch, or delete their own notes
+- if a user requests another user's note id, the API returns `404`
+
+### Notes Endpoints
+
+All note endpoints require authentication.
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `POST` | `/api/notes` | Create a note for the current user |
+| `GET` | `/api/notes` | Get all notes for the current user |
+| `GET` | `/api/notes/{id}` | Get a single owned note |
+| `GET` | `/api/notes/search?q=` | Search only the current user's notes |
+| `PUT` | `/api/notes/{id}` | Fully update an owned note |
+| `PATCH` | `/api/notes/{id}` | Partially update an owned note |
+| `DELETE` | `/api/notes/{id}` | Delete an owned note |
+
+## Core Technologies
+
+- `.NET 10`
+- `ASP.NET Core Web API`
+- `MongoDB`
+- `FluentValidation`
+- `JWT Bearer Authentication`
+- `xUnit`
+- `NSubstitute`
+
+## Configuration
+
+The API reads configuration from `appsettings.json`, `appsettings.Development.json`, environment variables, or user secrets.
+
+### Required Settings
+
+```json
 {
   "MongoDb": {
     "ConnectionString": "mongodb+srv://<user>:<password>@cluster.mongodb.net/",
-    "DatabaseName": "KnowledgeBaseDb",
-    "NotesCollectionName": "notes"
+    "DatabaseName": "knowledgeapi",
+    "NotesCollectionName": "notes",
+    "UsersCollectionName": "users",
+    "RefreshSessionsCollectionName": "refreshSessions"
+  },
+  "Jwt": {
+    "Issuer": "KnowledgeBase.Api",
+    "Audience": "KnowledgeBase.Client",
+    "SecretKey": "a-long-random-secret",
+    "ExpirationMinutes": 60
+  },
+  "RefreshToken": {
+    "ExpirationDays": 7,
+    "TokenByteLength": 32,
+    "CookieName": "kb.refreshToken",
+    "CookieSameSite": "Lax",
+    "CookieHttpOnly": true,
+    "CookieSecure": false
   }
 }
-🔑 Using User Secrets (recommended)
+```
+
+### Recommended Secret Management
+
+```powershell
 cd src/KnowledgeBase.Api
 dotnet user-secrets init
-
 dotnet user-secrets set "MongoDb:ConnectionString" "your_connection_string"
-dotnet user-secrets set "MongoDb:DatabaseName" "KnowledgeBaseDb"
-dotnet user-secrets set "MongoDb:NotesCollectionName" "notes"
-▶️ Running the Project
-1. Restore dependencies
+dotnet user-secrets set "Jwt:SecretKey" "your_long_random_secret"
+```
+
+## Running the API
+
+```powershell
 dotnet restore
-2. Run the API
 dotnet run --project src/KnowledgeBase.Api
-3. Open Swagger
-https://localhost:<port>/swagger
-🧪 Testing
+```
 
-Use Swagger or Postman to test endpoints.
+Swagger is available when running in Development.
 
-🧩 Design Decisions
-🔹 MongoDB + NoSQL
-Flexible schema for notes
-Efficient for tagging and search scenarios
-🔹 PATCH vs PUT
-PUT → full replacement
-PATCH → partial updates using MongoDB update definitions
-🔹 Clean Architecture
-Keeps business logic independent from infrastructure
-Improves maintainability and testability
-📌 Future Improvements
-Add pagination and filtering
-Implement authentication and authorization
-Add version history for notes
-Improve search with text indexes
-Dockerize the application
-Deploy to cloud (Azure / AWS)
-🤝 Contributing
+## Testing
 
-This project is for learning and portfolio purposes, but contributions and suggestions are welcome.
+Run the unit tests with:
 
-📄 License
+```powershell
+dotnet test KnowledgeBase.slnx
+```
+
+Current unit coverage focuses on:
+
+- note service behavior
+- auth service behavior
+- request validation rules
+
+## Frontend Integration Notes
+
+For a React browser client:
+
+- call `login`, `refresh`, and `logout` with `credentials: 'include'`
+- keep the access token in memory, not local storage
+- use the `RefreshAfterUtc` value from login/refresh responses to trigger silent refresh before expiry
+- on a `401`, attempt one refresh and then retry the original request once
+
+## Solution Layout
+
+```text
+src/
+  KnowledgeBase.Api
+  KnowledgeBase.Application
+  KnowledgeBase.Domain
+  KnowledgeBase.Infrastructure
+
+tests/
+  KnowledgeBase.Application.UnitTests
+```
+
+## License
 
 This project is licensed under the MIT License.
-
-👨‍💻 Author
-
-Developed as part of a portfolio to demonstrate backend and full-stack capabilities with .NET and modern web technologies.

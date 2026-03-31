@@ -1,10 +1,7 @@
-﻿using KnowledgeBase.Application.Abstractions;
+using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Application.DTOs;
 using KnowledgeBase.Domain.Abstractions;
 using KnowledgeBase.Domain.Entities;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace KnowledgeBase.Application.Services
 {
@@ -17,12 +14,13 @@ namespace KnowledgeBase.Application.Services
             _noteRepository = noteRepository;
         }
 
-        public async Task<NoteDto> CreateAsync(CreateNoteDto dto, CancellationToken cancellationToken = default)
+        public async Task<NoteDto> CreateAsync(string userId, CreateNoteDto dto, CancellationToken cancellationToken = default)
         {
             var now = DateTime.UtcNow;
 
             var note = new Note
             {
+                UserId = userId,
                 Title = dto.Title.Trim(),
                 Content = dto.Content.Trim(),
                 Tags = [.. dto.Tags
@@ -40,27 +38,27 @@ namespace KnowledgeBase.Application.Services
             return Map(created);
         }
 
-        public async Task<IReadOnlyList<NoteDto>> GetAllAsync(CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<NoteDto>> GetAllAsync(string userId, CancellationToken cancellationToken = default)
         {
-            var notes = await _noteRepository.GetAllAsync(cancellationToken);
+            var notes = await _noteRepository.GetAllAsync(userId, cancellationToken);
             return notes.Select(Map).ToList();
         }
 
-        public async Task<NoteDto?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
+        public async Task<NoteDto?> GetByIdAsync(string id, string userId, CancellationToken cancellationToken = default)
         {
-            var note = await _noteRepository.GetByIdAsync(id, cancellationToken);
+            var note = await _noteRepository.GetByIdAsync(id, userId, cancellationToken);
             return note is null ? null : Map(note);
         }
 
-        public async Task<IReadOnlyList<NoteDto>> SearchAsync(string query, CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<NoteDto>> SearchAsync(string userId, string query, CancellationToken cancellationToken = default)
         {
-            var notes = await _noteRepository.SearchAsync(query, cancellationToken);
+            var notes = await _noteRepository.SearchAsync(query, userId, cancellationToken);
             return notes.Select(Map).ToList();
         }
 
-        public async Task<bool> UpdateAsync(string id, UpdateNoteDto dto, CancellationToken cancellationToken = default)
+        public async Task<bool> UpdateAsync(string id, string userId, UpdateNoteDto dto, CancellationToken cancellationToken = default)
         {
-            var existing = await _noteRepository.GetByIdAsync(id, cancellationToken);
+            var existing = await _noteRepository.GetByIdAsync(id, userId, cancellationToken);
             if (existing is null)
                 return false;
 
@@ -77,7 +75,8 @@ namespace KnowledgeBase.Application.Services
 
             return await _noteRepository.UpdateAsync(existing, cancellationToken);
         }
-        public async Task<bool> PatchAsync(string id, PatchNoteDto dto, CancellationToken cancellationToken = default)
+
+        public async Task<bool> PatchAsync(string id, string userId, PatchNoteDto dto, CancellationToken cancellationToken = default)
         {
             var normalizedTitle = dto.Title?.Trim();
             var normalizedContent = dto.Content?.Trim();
@@ -96,6 +95,7 @@ namespace KnowledgeBase.Application.Services
 
             return await _noteRepository.PatchAsync(
                 id,
+                userId,
                 normalizedTitle,
                 normalizedContent,
                 normalizedTags,
@@ -105,9 +105,8 @@ namespace KnowledgeBase.Application.Services
                 cancellationToken);
         }
 
-
-        public Task<bool> DeleteAsync(string id, CancellationToken cancellationToken = default)
-            => _noteRepository.DeleteAsync(id, cancellationToken);
+        public Task<bool> DeleteAsync(string id, string userId, CancellationToken cancellationToken = default)
+            => _noteRepository.DeleteAsync(id, userId, cancellationToken);
 
         private static NoteDto Map(Note note) => new()
         {
