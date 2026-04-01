@@ -29,10 +29,22 @@ public class AdminService : IAdminService
         GetUsersQuery query,
         CancellationToken cancellationToken = default)
     {
-        var normalizedPage = Math.Max(1, query.Page);
-        var normalizedPageSize = Math.Max(1, query.PageSize);
+        var normalizedQuery = new GetUsersQuery
+        {
+            Page = Math.Max(1, query.Page),
+            PageSize = Math.Max(1, query.PageSize),
+            IsActive = query.IsActive,
+            IsAdmin = query.IsAdmin,
+            CreatedDate = query.CreatedDate,
+            SortBy = Enum.IsDefined(query.SortBy)
+                ? query.SortBy
+                : UserSortBy.CreatedDate,
+            SortDirection = Enum.IsDefined(query.SortDirection)
+                ? query.SortDirection
+                : SortDirection.Desc
+        };
 
-        return await _adminUserReader.GetAllAsync(normalizedPage, normalizedPageSize, cancellationToken);
+        return await _adminUserReader.GetAllAsync(normalizedQuery, cancellationToken);
     }
 
     public async Task<UserDto?> SetUserActiveStatusAsync(

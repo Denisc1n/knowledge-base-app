@@ -40,16 +40,40 @@ public class AdminServiceTests
             }
         };
 
-        _adminUserReader.GetAllAsync(1, 1, Arg.Any<CancellationToken>()).Returns(projectedUsers);
+        _adminUserReader.GetAllAsync(
+                Arg.Is<GetUsersQuery>(x =>
+                    x.Page == 1 &&
+                    x.PageSize == 1 &&
+                    x.IsActive == true &&
+                    x.IsAdmin == false &&
+                    x.CreatedDate == new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) &&
+                    x.SortBy == UserSortBy.LastName &&
+                    x.SortDirection == SortDirection.Asc),
+                Arg.Any<CancellationToken>())
+            .Returns(projectedUsers);
 
         var result = await _service.GetAllUsersAsync(new GetUsersQuery
         {
             Page = 0,
-            PageSize = -5
+            PageSize = -5,
+            IsActive = true,
+            IsAdmin = false,
+            CreatedDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            SortBy = UserSortBy.LastName,
+            SortDirection = SortDirection.Asc
         });
 
         Assert.Same(projectedUsers, result);
-        await _adminUserReader.Received(1).GetAllAsync(1, 1, Arg.Any<CancellationToken>());
+        await _adminUserReader.Received(1).GetAllAsync(
+            Arg.Is<GetUsersQuery>(x =>
+                x.Page == 1 &&
+                x.PageSize == 1 &&
+                x.IsActive == true &&
+                x.IsAdmin == false &&
+                x.CreatedDate == new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) &&
+                x.SortBy == UserSortBy.LastName &&
+                x.SortDirection == SortDirection.Asc),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]

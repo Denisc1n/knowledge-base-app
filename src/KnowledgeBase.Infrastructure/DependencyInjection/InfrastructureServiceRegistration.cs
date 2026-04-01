@@ -1,6 +1,7 @@
 using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Domain.Abstractions;
 using KnowledgeBase.Infrastructure.Persistence;
+using KnowledgeBase.Infrastructure.Queries;
 using KnowledgeBase.Infrastructure.Repositories;
 using KnowledgeBase.Infrastructure.Security;
 using Microsoft.Extensions.Configuration;
