@@ -46,6 +46,8 @@ public class AuthService : IAuthService
             Username = normalizedUsername,
             Email = normalizedEmail,
             PasswordHash = _passwordHasher.Hash(dto.Password),
+            SecurityStamp = CreateSecurityStamp(),
+            CreatedAtUtc = DateTime.UtcNow,
             IsActive = true,
             IsAdmin = false
         };
@@ -116,11 +118,33 @@ public class AuthService : IAuthService
         await _refreshSessionRepository.UpdateAsync(session, cancellationToken);
     }
 
+    public async Task ResetPasswordAsync(string userId, ResetPasswordDto dto, CancellationToken cancellationToken = default)
+    {
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+        if (user is null || !user.IsActive)
+            throw new AuthenticationException("Invalid user.");
+
+        if (!_passwordHasher.Verify(dto.CurrentPassword, user.PasswordHash))
+            throw new AuthenticationException("Current password is invalid.");
+
+        user.PasswordHash = _passwordHasher.Hash(dto.NewPassword);
+        user.SecurityStamp = CreateSecurityStamp();
+
+        await _userRepository.UpdateAsync(user, cancellationToken);
+        await _refreshSessionRepository.RevokeActiveSessionsByUserIdAsync(
+            user.Id,
+            DateTime.UtcNow,
+            cancellationToken);
+    }
+
     private static string NormalizeUsername(string username) =>
         username.Trim().ToLowerInvariant();
 
     private static string NormalizeEmail(string email) =>
         email.Trim().ToLowerInvariant();
+
+    private static string CreateSecurityStamp() =>
+        Guid.NewGuid().ToString("N");
 
     private static UserDto Map(User user) => new()
     {
@@ -135,6 +159,12 @@ public class AuthService : IAuthService
 
     private async Task<LoginResultDto> IssueTokensAsync(User user, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(user.SecurityStamp))
+        {
+            user.SecurityStamp = CreateSecurityStamp();
+            await _userRepository.UpdateAsync(user, cancellationToken);
+        }
+
         var accessToken = _jwtTokenGenerator.Generate(user);
         var refreshToken = _refreshTokenProvider.Generate();
 

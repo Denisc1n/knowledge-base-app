@@ -16,6 +16,8 @@ namespace KnowledgeBase.Domain.Entities
         public string Username { get; set; } = default!;
         public string Email { get; set; } = default!;
         public string PasswordHash { get; set; } = default!;
+        public string SecurityStamp { get; set; } = default!;
+        public DateTime CreatedAtUtc { get; set; }
         public bool IsActive { get; set; } = true;
         public bool IsAdmin { get; set; }
     }

@@ -118,3 +118,33 @@ public class RefreshTokenDtoValidatorTests
         Assert.Contains(result.Errors, e => e.PropertyName == nameof(RefreshTokenDto.RefreshToken));
     }
 }
+
+public class ResetPasswordDtoValidatorTests
+{
+    private readonly ResetPasswordDtoValidator _validator = new();
+
+    [Fact]
+    public void Validate_WhenDtoIsValid_ShouldPass()
+    {
+        var result = _validator.Validate(new ResetPasswordDto
+        {
+            CurrentPassword = "CurrentPassword123!",
+            NewPassword = "NewPassword123!"
+        });
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void Validate_WhenNewPasswordMatchesCurrentPassword_ShouldFail()
+    {
+        var result = _validator.Validate(new ResetPasswordDto
+        {
+            CurrentPassword = "SamePassword123!",
+            NewPassword = "SamePassword123!"
+        });
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(ResetPasswordDto.NewPassword));
+    }
+}

@@ -6,11 +6,11 @@ using KnowledgeBase.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using System.Security.Claims;
 
 namespace KnowledgeBase.Api.Controllers;
 
 [ApiController]
-[AllowAnonymous]
 [Route("api/[controller]")]
 public class AuthController : ControllerBase
 {
@@ -26,6 +26,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("signup")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(UserResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Signup(
@@ -53,6 +54,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(LoginResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Login(
@@ -78,6 +80,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("refresh")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(LoginResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Refresh(
@@ -106,6 +109,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("logout")]
+    [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> Logout(
         [FromBody] RefreshTokenRequest? request,
@@ -123,6 +127,35 @@ public class AuthController : ControllerBase
 
         DeleteRefreshTokenCookie();
         return NoContent();
+    }
+
+    [Authorize]
+    [HttpPost("reset-password")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> ResetPassword(
+        [FromBody] ResetPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (string.IsNullOrWhiteSpace(userId))
+            return Unauthorized(new { message = "User identifier is missing." });
+
+        try
+        {
+            await _authService.ResetPasswordAsync(userId, new ResetPasswordDto
+            {
+                CurrentPassword = request.CurrentPassword,
+                NewPassword = request.NewPassword
+            }, cancellationToken);
+
+            DeleteRefreshTokenCookie();
+            return NoContent();
+        }
+        catch (AuthenticationException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
+        }
     }
 
     private LoginResponse Map(LoginResultDto dto) => new()

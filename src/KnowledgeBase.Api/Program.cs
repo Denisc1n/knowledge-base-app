@@ -1,10 +1,12 @@
 using FluentValidation.AspNetCore;
 using KnowledgeBase.Api.Extensions;
+using KnowledgeBase.Domain.Abstractions;
 using KnowledgeBase.Infrastructure.DependencyInjection;
 using KnowledgeBase.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
+using System.Security.Claims;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -56,9 +58,33 @@ builder.Services
             IssuerSigningKey = new SymmetricSecurityKey(
                 Encoding.UTF8.GetBytes(jwtSettings.SecretKey))
         };
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async context =>
+            {
+                var userId = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier)
+                    ?? context.Principal?.FindFirstValue("sub");
+                var tokenSecurityStamp = context.Principal?.FindFirstValue("sstamp");
+
+                if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(tokenSecurityStamp))
+                {
+                    context.Fail("Invalid token.");
+                    return;
+                }
+
+                var userRepository = context.HttpContext.RequestServices.GetRequiredService<IUserRepository>();
+                var user = await userRepository.GetByIdAsync(userId, context.HttpContext.RequestAborted);
+
+                if (user is null || !user.IsActive || user.SecurityStamp != tokenSecurityStamp)
+                    context.Fail("Invalid token.");
+            }
+        };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
+});
 
 builder.Services.AddCors(options =>
 {

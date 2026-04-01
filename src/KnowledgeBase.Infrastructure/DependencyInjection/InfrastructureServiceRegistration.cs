@@ -22,6 +22,7 @@ public static class InfrastructureServiceRegistration
             configuration.GetSection(RefreshTokenSettings.SectionName));
 
         services.AddSingleton<MongoContext>();
+        services.AddScoped<IAdminUserReader, AdminUserReader>();
         services.AddScoped<INoteRepository, NoteRepository>();
         services.AddScoped<IRefreshSessionRepository, RefreshSessionRepository>();
         services.AddScoped<IUserRepository, UserRepository>();

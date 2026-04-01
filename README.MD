@@ -52,6 +52,7 @@ The API uses JWT access tokens plus refresh sessions.
 - the browser receives the refresh token through an `HttpOnly` cookie
 - the React frontend should call auth endpoints with `credentials: 'include'`
 - refresh-token rotation is used, so each refresh invalidates the previous refresh token
+- access tokens also carry a user `SecurityStamp`, so tokens issued before a password reset become invalid
 
 ### Auth Endpoints
 
@@ -61,6 +62,28 @@ The API uses JWT access tokens plus refresh sessions.
 | `POST` | `/api/auth/login` | Return an access token and set refresh-token cookie |
 | `POST` | `/api/auth/refresh` | Rotate refresh token and return a new access token |
 | `POST` | `/api/auth/logout` | Revoke refresh session and clear refresh-token cookie |
+| `POST` | `/api/auth/reset-password` | Change the current user's password, revoke all sessions, and clear the refresh-token cookie |
+
+### Password Reset Behavior
+
+`POST /api/auth/reset-password` requires authentication and expects:
+
+```json
+{
+  "currentPassword": "OldPassword123!",
+  "newPassword": "NewPassword123!"
+}
+```
+
+On success, the API:
+
+- verifies the current password
+- stores the new password as a hash
+- rotates the user's `SecurityStamp`
+- revokes all active refresh sessions for that user
+- clears the refresh-token cookie
+
+Because access tokens are validated against the current `SecurityStamp`, any previously issued access token stops working after the password reset. The user must log in again with the new password.
 
 ## Notes and Ownership
 
@@ -158,6 +181,7 @@ Current unit coverage focuses on:
 
 - note service behavior
 - auth service behavior
+- reset-password auth behavior
 - request validation rules
 
 ## Frontend Integration Notes
@@ -168,6 +192,7 @@ For a React browser client:
 - keep the access token in memory, not local storage
 - use the `RefreshAfterUtc` value from login/refresh responses to trigger silent refresh before expiry
 - on a `401`, attempt one refresh and then retry the original request once
+- if `reset-password` succeeds, clear any in-memory access token and redirect the user to log in again
 
 ## Solution Layout
 

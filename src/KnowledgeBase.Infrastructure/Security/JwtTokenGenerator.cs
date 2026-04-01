@@ -29,6 +29,7 @@ public class JwtTokenGenerator : IJwtTokenGenerator
             new(JwtRegisteredClaimNames.Email, user.Email),
             new(JwtRegisteredClaimNames.GivenName, user.FirstName),
             new(JwtRegisteredClaimNames.FamilyName, user.LastName),
+            new("sstamp", user.SecurityStamp),
             new(ClaimTypes.NameIdentifier, user.Id),
             new(ClaimTypes.Name, user.Username),
             new(ClaimTypes.Email, user.Email)

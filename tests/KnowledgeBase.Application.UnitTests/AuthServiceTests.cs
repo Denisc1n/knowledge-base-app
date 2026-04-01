@@ -64,6 +64,7 @@ public class AuthServiceTests
                 u.Username == "jane.doe" &&
                 u.Email == "jane@example.com" &&
                 u.PasswordHash == "hashed-password" &&
+                !string.IsNullOrWhiteSpace(u.SecurityStamp) &&
                 u.IsActive &&
                 !u.IsAdmin),
             Arg.Any<CancellationToken>());
@@ -105,6 +106,7 @@ public class AuthServiceTests
             Username = "jane",
             Email = "jane@example.com",
             PasswordHash = "hash",
+            SecurityStamp = "stamp-1",
             IsActive = true,
             IsAdmin = true
         };
@@ -151,6 +153,7 @@ public class AuthServiceTests
             Username = "john",
             Email = "john@example.com",
             PasswordHash = "hash",
+            SecurityStamp = "stamp-2",
             IsActive = false
         };
 
@@ -178,6 +181,7 @@ public class AuthServiceTests
             Username = "john",
             Email = "john@example.com",
             PasswordHash = "hash",
+            SecurityStamp = "stamp-3",
             IsActive = true
         };
 
@@ -213,6 +217,7 @@ public class AuthServiceTests
             Username = "jane",
             Email = "jane@example.com",
             PasswordHash = "hash",
+            SecurityStamp = "stamp-4",
             IsActive = true
         };
 
@@ -290,5 +295,73 @@ public class AuthServiceTests
 
         Assert.NotNull(session.RevokedAtUtc);
         await _refreshSessionRepository.Received(1).UpdateAsync(session, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ResetPasswordAsync_WhenCurrentPasswordIsValid_UpdatesHash_RotatesSecurityStamp_AndRevokesSessions()
+    {
+        var user = new User
+        {
+            Id = "user-8",
+            FirstName = "Jane",
+            LastName = "Doe",
+            Username = "jane",
+            Email = "jane@example.com",
+            PasswordHash = "old-hash",
+            SecurityStamp = "old-stamp",
+            IsActive = true
+        };
+
+        _userRepository.GetByIdAsync("user-8", Arg.Any<CancellationToken>()).Returns(user);
+        _passwordHasher.Verify("CurrentPassword123!", "old-hash").Returns(true);
+        _passwordHasher.Hash("NewPassword123!").Returns("new-hash");
+
+        await _service.ResetPasswordAsync("user-8", new ResetPasswordDto
+        {
+            CurrentPassword = "CurrentPassword123!",
+            NewPassword = "NewPassword123!"
+        });
+
+        Assert.Equal("new-hash", user.PasswordHash);
+        Assert.NotEqual("old-stamp", user.SecurityStamp);
+        Assert.False(string.IsNullOrWhiteSpace(user.SecurityStamp));
+        await _userRepository.Received(1).UpdateAsync(user, Arg.Any<CancellationToken>());
+        await _refreshSessionRepository.Received(1).RevokeActiveSessionsByUserIdAsync(
+            "user-8",
+            Arg.Any<DateTime>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ResetPasswordAsync_WhenCurrentPasswordIsInvalid_ThrowsAuthenticationException()
+    {
+        var user = new User
+        {
+            Id = "user-9",
+            FirstName = "Jane",
+            LastName = "Doe",
+            Username = "jane",
+            Email = "jane@example.com",
+            PasswordHash = "old-hash",
+            SecurityStamp = "stamp-9",
+            IsActive = true
+        };
+
+        _userRepository.GetByIdAsync("user-9", Arg.Any<CancellationToken>()).Returns(user);
+        _passwordHasher.Verify("wrong-current-password", "old-hash").Returns(false);
+
+        var ex = await Assert.ThrowsAsync<AuthenticationException>(() =>
+            _service.ResetPasswordAsync("user-9", new ResetPasswordDto
+            {
+                CurrentPassword = "wrong-current-password",
+                NewPassword = "NewPassword123!"
+            }));
+
+        Assert.Equal("Current password is invalid.", ex.Message);
+        await _userRepository.DidNotReceive().UpdateAsync(Arg.Any<User>(), Arg.Any<CancellationToken>());
+        await _refreshSessionRepository.DidNotReceive().RevokeActiveSessionsByUserIdAsync(
+            Arg.Any<string>(),
+            Arg.Any<DateTime>(),
+            Arg.Any<CancellationToken>());
     }
 }

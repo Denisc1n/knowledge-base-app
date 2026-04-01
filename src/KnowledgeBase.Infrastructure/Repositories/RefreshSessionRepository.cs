@@ -36,4 +36,19 @@ public class RefreshSessionRepository : IRefreshSessionRepository
 
         return result.ModifiedCount > 0;
     }
+
+    public async Task<long> RevokeActiveSessionsByUserIdAsync(
+        string userId,
+        DateTime revokedAtUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var update = Builders<RefreshSession>.Update.Set(x => x.RevokedAtUtc, revokedAtUtc);
+
+        var result = await _context.RefreshSessions.UpdateManyAsync(
+            x => x.UserId == userId && !x.RevokedAtUtc.HasValue,
+            update,
+            cancellationToken: cancellationToken);
+
+        return result.ModifiedCount;
+    }
 }
