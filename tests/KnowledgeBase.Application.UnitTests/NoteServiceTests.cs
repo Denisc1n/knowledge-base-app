@@ -1,4 +1,5 @@
 using KnowledgeBase.Application.DTOs;
+using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Application.Services;
 using KnowledgeBase.Domain.Abstractions;
 using KnowledgeBase.Domain.Entities;
@@ -12,12 +13,14 @@ public class NoteServiceTests
     private const string UserId = "user-123";
 
     private readonly INoteRepository _repository;
+    private readonly INoteReader _reader;
     private readonly NoteService _service;
 
     public NoteServiceTests()
     {
         _repository = Substitute.For<INoteRepository>();
-        _service = new NoteService(_repository);
+        _reader = Substitute.For<INoteReader>();
+        _service = new NoteService(_repository, _reader);
     }
 
     [Fact]
@@ -63,12 +66,62 @@ public class NoteServiceTests
     [Fact]
     public async Task GetByIdAsync_WhenRepositoryReturnsNull_ReturnsNull()
     {
-        _repository.GetByIdAsync("missing-id", UserId, Arg.Any<CancellationToken>())
-            .Returns((Note?)null);
+        _reader.GetByIdAsync("missing-id", UserId, Arg.Any<CancellationToken>())
+            .Returns((NoteDto?)null);
 
         var result = await _service.GetByIdAsync("missing-id", UserId);
 
         Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetAllAsync_WhenReaderProjectsDtos_ReturnsSameProjectedItems()
+    {
+        var projected = new List<NoteDto>
+        {
+            new()
+            {
+                Id = "note-10",
+                Title = "Projected",
+                Content = "Projected content",
+                Tags = ["dotnet"],
+                Category = "Backend",
+                Status = NoteStatus.Published,
+                CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                UpdatedAtUtc = new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc)
+            }
+        };
+
+        _reader.GetAllAsync(UserId, Arg.Any<CancellationToken>()).Returns(projected);
+
+        var result = await _service.GetAllAsync(UserId);
+
+        Assert.Same(projected, result);
+    }
+
+    [Fact]
+    public async Task SearchAsync_WhenReaderProjectsDtos_ReturnsSameProjectedItems()
+    {
+        var projected = new List<NoteDto>
+        {
+            new()
+            {
+                Id = "note-11",
+                Title = "Search result",
+                Content = "Projected search result",
+                Tags = ["search"],
+                Category = "Testing",
+                Status = NoteStatus.Draft,
+                CreatedAtUtc = new DateTime(2026, 2, 1, 0, 0, 0, DateTimeKind.Utc),
+                UpdatedAtUtc = new DateTime(2026, 2, 2, 0, 0, 0, DateTimeKind.Utc)
+            }
+        };
+
+        _reader.SearchAsync("term", UserId, Arg.Any<CancellationToken>()).Returns(projected);
+
+        var result = await _service.SearchAsync(UserId, "term");
+
+        Assert.Same(projected, result);
     }
 
     [Fact]

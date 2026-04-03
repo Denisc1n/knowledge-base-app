@@ -11,7 +11,7 @@ namespace KnowledgeBase.Application.UnitTests;
 public class AdminServiceTests
 {
     private readonly IUserRepository _userRepository;
-    private readonly IAdminUserReader _adminUserReader;
+    private readonly IUserReader _userReader;
     private readonly INoteRepository _noteRepository;
     private readonly IRefreshSessionRepository _refreshSessionRepository;
     private readonly AdminService _service;
@@ -19,10 +19,10 @@ public class AdminServiceTests
     public AdminServiceTests()
     {
         _userRepository = Substitute.For<IUserRepository>();
-        _adminUserReader = Substitute.For<IAdminUserReader>();
+        _userReader = Substitute.For<IUserReader>();
         _noteRepository = Substitute.For<INoteRepository>();
         _refreshSessionRepository = Substitute.For<IRefreshSessionRepository>();
-        _service = new AdminService(_userRepository, _adminUserReader, _noteRepository, _refreshSessionRepository);
+        _service = new AdminService(_userRepository, _userReader, _noteRepository, _refreshSessionRepository);
     }
 
     [Fact]
@@ -40,7 +40,7 @@ public class AdminServiceTests
             }
         };
 
-        _adminUserReader.GetAllAsync(
+        _userReader.GetAllAsync(
                 Arg.Is<GetUsersQuery>(x =>
                     x.Page == 1 &&
                     x.PageSize == 1 &&
@@ -64,7 +64,7 @@ public class AdminServiceTests
         });
 
         Assert.Same(projectedUsers, result);
-        await _adminUserReader.Received(1).GetAllAsync(
+        await _userReader.Received(1).GetAllAsync(
             Arg.Is<GetUsersQuery>(x =>
                 x.Page == 1 &&
                 x.PageSize == 1 &&

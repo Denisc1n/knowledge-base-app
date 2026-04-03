@@ -18,7 +18,7 @@ The backend follows a layered architecture with Clean Architecture principles.
 - `KnowledgeBase.Api`: HTTP transport layer, controllers, request/response contracts, auth middleware setup
 - `KnowledgeBase.Application`: use cases, DTOs, validation, and service orchestration
 - `KnowledgeBase.Domain`: core entities and repository abstractions
-- `KnowledgeBase.Infrastructure`: MongoDB persistence, JWT generation, password hashing, refresh-token support
+- `KnowledgeBase.Infrastructure`: MongoDB persistence, Mongo query readers, JWT generation, password hashing, refresh-token support
 - `KnowledgeBase.Application.UnitTests`: unit tests using `xUnit` and `NSubstitute`
 
 ### Dependency Direction
@@ -39,9 +39,27 @@ flowchart LR
 flowchart LR
     Client["React Client"] --> Controller["API Controller"]
     Controller --> Service["Application Service"]
-    Service --> Repo["Repository Abstraction"]
+    Service --> Repo["Repository / Reader Abstraction"]
     Repo --> Mongo["MongoDB"]
 ```
+
+### Read And Write Split
+
+The backend now uses the same read/write split pattern for users and notes:
+
+- write operations use repositories and work with domain entities
+- read operations use dedicated readers
+- readers project Mongo documents directly into DTOs
+- application services return those projected DTOs without remapping them in memory
+
+Current examples:
+
+- notes:
+  - `INoteRepository` for writes and entity-based updates
+  - `INoteReader` for `NoteDto` projection
+- users:
+  - `IUserRepository` for writes and auth/entity-based access
+  - `IUserReader` for `UserListItemDto` projection
 
 ## Authentication and Sessions
 
@@ -94,6 +112,7 @@ Notes are user-owned.
 - all note queries are filtered by both `note.Id` and `note.UserId` when relevant
 - a user can only read, search, update, patch, or delete their own notes
 - if a user requests another user's note id, the API returns `404`
+- note reads are projected directly from Mongo into `NoteDto`
 
 ### Notes Endpoints
 

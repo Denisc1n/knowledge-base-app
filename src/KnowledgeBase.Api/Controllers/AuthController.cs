@@ -1,4 +1,6 @@
 using KnowledgeBase.Api.Contracts.Auth;
+using KnowledgeBase.Api.Extensions;
+using KnowledgeBase.Api.Security;
 using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Application.DTOs;
 using KnowledgeBase.Application.Exceptions;
@@ -6,7 +8,6 @@ using KnowledgeBase.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using System.Security.Claims;
 
 namespace KnowledgeBase.Api.Controllers;
 
@@ -49,7 +50,11 @@ public class AuthController : ControllerBase
         }
         catch (DuplicateUserException ex)
         {
-            return Conflict(new { message = ex.Message, field = ex.FieldName });
+            return this.ConflictError(
+                ex.Message,
+                code: ErrorCodes.AuthDuplicateUser,
+                type: "https://httpstatuses.com/409",
+                field: ex.FieldName);
         }
     }
 
@@ -75,7 +80,10 @@ public class AuthController : ControllerBase
         }
         catch (AuthenticationException ex)
         {
-            return Unauthorized(new { message = ex.Message });
+            return this.UnauthorizedError(
+                ex.Message,
+                code: ErrorCodes.AuthInvalidCredentials,
+                type: "https://httpstatuses.com/401");
         }
     }
 
@@ -89,7 +97,10 @@ public class AuthController : ControllerBase
     {
         var refreshToken = ResolveRefreshToken(request?.RefreshToken);
         if (string.IsNullOrWhiteSpace(refreshToken))
-            return Unauthorized(new { message = "Refresh token is missing." });
+            return this.UnauthorizedError(
+                "Refresh token is missing.",
+                code: ErrorCodes.AuthRefreshTokenMissing,
+                type: "https://httpstatuses.com/401");
 
         try
         {
@@ -104,7 +115,10 @@ public class AuthController : ControllerBase
         catch (AuthenticationException ex)
         {
             DeleteRefreshTokenCookie();
-            return Unauthorized(new { message = ex.Message });
+            return this.UnauthorizedError(
+                ex.Message,
+                code: ErrorCodes.AuthInvalidCredentials,
+                type: "https://httpstatuses.com/401");
         }
     }
 
@@ -129,17 +143,21 @@ public class AuthController : ControllerBase
         return NoContent();
     }
 
-    [Authorize]
+    [Authorize(Policy = AuthorizationPolicies.AuthenticatedUser)]
     [HttpPost("reset-password")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> ResetPassword(
         [FromBody] ResetPasswordRequest request,
         CancellationToken cancellationToken)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        var userId = User.GetCurrentUserId();
         if (string.IsNullOrWhiteSpace(userId))
-            return Unauthorized(new { message = "User identifier is missing." });
+            return this.UnauthorizedError(
+                "User identifier is missing.",
+                code: ErrorCodes.AuthMissingUserId,
+                type: "https://httpstatuses.com/401");
 
         try
         {
@@ -154,7 +172,10 @@ public class AuthController : ControllerBase
         }
         catch (AuthenticationException ex)
         {
-            return Unauthorized(new { message = ex.Message });
+            return this.UnauthorizedError(
+                ex.Message,
+                code: ErrorCodes.AuthInvalidCredentials,
+                type: "https://httpstatuses.com/401");
         }
     }
 

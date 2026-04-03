@@ -8,10 +8,12 @@ namespace KnowledgeBase.Application.Services
     public class NoteService : INoteService
     {
         private readonly INoteRepository _noteRepository;
+        private readonly INoteReader _noteReader;
 
-        public NoteService(INoteRepository noteRepository)
+        public NoteService(INoteRepository noteRepository, INoteReader noteReader)
         {
             _noteRepository = noteRepository;
+            _noteReader = noteReader;
         }
 
         public async Task<NoteDto> CreateAsync(string userId, CreateNoteDto dto, CancellationToken cancellationToken = default)
@@ -40,20 +42,17 @@ namespace KnowledgeBase.Application.Services
 
         public async Task<IReadOnlyList<NoteDto>> GetAllAsync(string userId, CancellationToken cancellationToken = default)
         {
-            var notes = await _noteRepository.GetAllAsync(userId, cancellationToken);
-            return notes.Select(Map).ToList();
+            return await _noteReader.GetAllAsync(userId, cancellationToken);
         }
 
         public async Task<NoteDto?> GetByIdAsync(string id, string userId, CancellationToken cancellationToken = default)
         {
-            var note = await _noteRepository.GetByIdAsync(id, userId, cancellationToken);
-            return note is null ? null : Map(note);
+            return await _noteReader.GetByIdAsync(id, userId, cancellationToken);
         }
 
         public async Task<IReadOnlyList<NoteDto>> SearchAsync(string userId, string query, CancellationToken cancellationToken = default)
         {
-            var notes = await _noteRepository.SearchAsync(query, userId, cancellationToken);
-            return notes.Select(Map).ToList();
+            return await _noteReader.SearchAsync(query, userId, cancellationToken);
         }
 
         public async Task<bool> UpdateAsync(string id, string userId, UpdateNoteDto dto, CancellationToken cancellationToken = default)

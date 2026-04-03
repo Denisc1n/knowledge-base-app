@@ -8,11 +8,11 @@ using QuerySortDirection = KnowledgeBase.Application.Queries.SortDirection;
 
 namespace KnowledgeBase.Infrastructure.Queries;
 
-public class AdminUserReader : IAdminUserReader
+public class UserReader : IUserReader
 {
     private readonly MongoContext _context;
 
-    public AdminUserReader(MongoContext context)
+    public UserReader(MongoContext context)
     {
         _context = context;
     }

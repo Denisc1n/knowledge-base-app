@@ -8,9 +8,7 @@ namespace KnowledgeBase.Domain.Abstractions
     public interface INoteRepository
     {
         Task<Note> CreateAsync(Note note, CancellationToken cancellationToken = default);
-        Task<IReadOnlyList<Note>> GetAllAsync(string userId, CancellationToken cancellationToken = default);
         Task<Note?> GetByIdAsync(string id, string userId, CancellationToken cancellationToken = default);
-        Task<IReadOnlyList<Note>> SearchAsync(string query, string userId, CancellationToken cancellationToken = default);
         Task<bool> UpdateAsync(Note note, CancellationToken cancellationToken = default);
         Task<bool> DeleteAsync(string id, string userId, CancellationToken cancellationToken = default);
         Task<bool> PatchAsync(

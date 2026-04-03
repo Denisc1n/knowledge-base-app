@@ -3,7 +3,7 @@ using KnowledgeBase.Application.Queries;
 
 namespace KnowledgeBase.Application.Abstractions;
 
-public interface IAdminUserReader
+public interface IUserReader
 {
     Task<IReadOnlyList<UserListItemDto>> GetAllAsync(GetUsersQuery query, CancellationToken cancellationToken = default);
 }

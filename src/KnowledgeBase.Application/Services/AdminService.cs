@@ -9,18 +9,18 @@ namespace KnowledgeBase.Application.Services;
 public class AdminService : IAdminService
 {
     private readonly IUserRepository _userRepository;
-    private readonly IAdminUserReader _adminUserReader;
+    private readonly IUserReader _userReader;
     private readonly INoteRepository _noteRepository;
     private readonly IRefreshSessionRepository _refreshSessionRepository;
 
     public AdminService(
         IUserRepository userRepository,
-        IAdminUserReader adminUserReader,
+        IUserReader userReader,
         INoteRepository noteRepository,
         IRefreshSessionRepository refreshSessionRepository)
     {
         _userRepository = userRepository;
-        _adminUserReader = adminUserReader;
+        _userReader = userReader;
         _noteRepository = noteRepository;
         _refreshSessionRepository = refreshSessionRepository;
     }
@@ -44,7 +44,7 @@ public class AdminService : IAdminService
                 : SortDirection.Desc
         };
 
-        return await _adminUserReader.GetAllAsync(normalizedQuery, cancellationToken);
+        return await _userReader.GetAllAsync(normalizedQuery, cancellationToken);
     }
 
     public async Task<UserDto?> SetUserActiveStatusAsync(

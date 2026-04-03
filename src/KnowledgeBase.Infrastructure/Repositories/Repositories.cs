@@ -21,42 +21,11 @@ namespace KnowledgeBase.Infrastructure.Repositories
             return note;
         }
 
-        public async Task<IReadOnlyList<Note>> GetAllAsync(string userId, CancellationToken cancellationToken = default)
-        {
-            return await _context.Notes
-                .Find(x => x.UserId == userId)
-                .SortByDescending(x => x.UpdatedAtUtc)
-                .ToListAsync(cancellationToken);
-        }
-
         public async Task<Note?> GetByIdAsync(string id, string userId, CancellationToken cancellationToken = default)
         {
             return await _context.Notes
                 .Find(x => x.Id == id && x.UserId == userId)
                 .FirstOrDefaultAsync(cancellationToken);
-        }
-
-        public async Task<IReadOnlyList<Note>> SearchAsync(string query, string userId, CancellationToken cancellationToken = default)
-        {
-            if (string.IsNullOrWhiteSpace(query))
-                return Array.Empty<Note>();
-
-            var lowered = query.Trim().ToLowerInvariant();
-
-            var ownershipFilter = Builders<Note>.Filter.Eq(x => x.UserId, userId);
-            var contentFilter = Builders<Note>.Filter.Or(
-                Builders<Note>.Filter.Regex(x => x.Title, new MongoDB.Bson.BsonRegularExpression(lowered, "i")),
-                Builders<Note>.Filter.Regex(x => x.Content, new MongoDB.Bson.BsonRegularExpression(lowered, "i")),
-                Builders<Note>.Filter.AnyEq(x => x.Tags, lowered),
-                Builders<Note>.Filter.Regex(x => x.Category, new MongoDB.Bson.BsonRegularExpression(lowered, "i"))
-            );
-
-            var filter = Builders<Note>.Filter.And(ownershipFilter, contentFilter);
-
-            return await _context.Notes
-                .Find(filter)
-                .SortByDescending(x => x.UpdatedAtUtc)
-                .ToListAsync(cancellationToken);
         }
 
         public async Task<bool> UpdateAsync(Note note, CancellationToken cancellationToken = default)

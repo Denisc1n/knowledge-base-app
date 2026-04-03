@@ -1,9 +1,11 @@
 using FluentValidation.AspNetCore;
 using KnowledgeBase.Api.Extensions;
+using KnowledgeBase.Api.Security;
 using KnowledgeBase.Domain.Abstractions;
 using KnowledgeBase.Infrastructure.DependencyInjection;
 using KnowledgeBase.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using System.Security.Claims;
@@ -11,6 +13,7 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddProblemDetails();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -60,6 +63,37 @@ builder.Services
         };
         options.Events = new JwtBearerEvents
         {
+            OnChallenge = async context =>
+            {
+                context.HandleResponse();
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                context.Response.ContentType = "application/problem+json";
+
+                await context.Response.WriteAsJsonAsync(new ProblemDetails
+                {
+                    Status = StatusCodes.Status401Unauthorized,
+                    Title = "Unauthorized",
+                    Detail = string.IsNullOrWhiteSpace(context.ErrorDescription)
+                        ? "Authentication is required to access this resource."
+                        : context.ErrorDescription,
+                    Type = "https://httpstatuses.com/401",
+                    Instance = context.Request.Path
+                }.WithCode(ErrorCodes.AuthUnauthorized));
+            },
+            OnForbidden = async context =>
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                context.Response.ContentType = "application/problem+json";
+
+                await context.Response.WriteAsJsonAsync(new ProblemDetails
+                {
+                    Status = StatusCodes.Status403Forbidden,
+                    Title = "Forbidden",
+                    Detail = "You do not have permission to access this resource.",
+                    Type = "https://httpstatuses.com/403",
+                    Instance = context.Request.Path
+                }.WithCode(ErrorCodes.AuthForbidden));
+            },
             OnTokenValidated = async context =>
             {
                 var userId = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier)
@@ -83,7 +117,18 @@ builder.Services
 
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
+    options.AddPolicy(AuthorizationPolicies.AuthenticatedUser, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.RequireClaim(ClaimTypes.NameIdentifier);
+    });
+
+    options.AddPolicy(AuthorizationPolicies.AdminOnly, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.RequireClaim(ClaimTypes.NameIdentifier);
+        policy.RequireRole("Admin");
+    });
 });
 
 builder.Services.AddCors(options =>
@@ -99,6 +144,8 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+app.UseExceptionHandler();
 
 if (app.Environment.IsDevelopment())
 {
