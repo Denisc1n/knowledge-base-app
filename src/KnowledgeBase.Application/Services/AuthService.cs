@@ -1,6 +1,7 @@
 using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Application.DTOs;
 using KnowledgeBase.Application.Exceptions;
+using KnowledgeBase.Application.Security;
 using KnowledgeBase.Domain.Abstractions;
 using KnowledgeBase.Domain.Entities;
 
@@ -10,18 +11,27 @@ public class AuthService : IAuthService
 {
     private readonly IUserRepository _userRepository;
     private readonly IRefreshSessionRepository _refreshSessionRepository;
+    private readonly IRefreshSessionReader _refreshSessionReader;
+    private readonly IAuthAuditRepository _authAuditRepository;
+    private readonly IAuthAuditReader _authAuditReader;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
     private readonly IRefreshTokenProvider _refreshTokenProvider;
 
     public AuthService(
         IUserRepository userRepository,
+        IRefreshSessionReader refreshSessionReader,
+        IAuthAuditRepository authAuditRepository,
+        IAuthAuditReader authAuditReader,
         IPasswordHasher passwordHasher,
         IJwtTokenGenerator jwtTokenGenerator,
         IRefreshSessionRepository refreshSessionRepository,
         IRefreshTokenProvider refreshTokenProvider)
     {
         _userRepository = userRepository;
+        _refreshSessionReader = refreshSessionReader;
+        _authAuditRepository = authAuditRepository;
+        _authAuditReader = authAuditReader;
         _passwordHasher = passwordHasher;
         _jwtTokenGenerator = jwtTokenGenerator;
         _refreshSessionRepository = refreshSessionRepository;
@@ -56,7 +66,10 @@ public class AuthService : IAuthService
         return Map(created);
     }
 
-    public async Task<LoginResultDto> LoginAsync(LoginDto dto, CancellationToken cancellationToken = default)
+    public async Task<LoginResultDto> LoginAsync(
+        LoginDto dto,
+        SessionContextDto context,
+        CancellationToken cancellationToken = default)
     {
         var normalizedUsername = NormalizeUsername(dto.Username);
         var user = await _userRepository.GetByUsernameAsync(normalizedUsername, cancellationToken);
@@ -67,10 +80,13 @@ public class AuthService : IAuthService
         if (!user.IsActive)
             throw new AuthenticationException("This user is inactive.");
 
-        return await IssueTokensAsync(user, cancellationToken);
+        return await IssueTokensAsync(user, context, AuthAuditEventTypes.Login, cancellationToken);
     }
 
-    public async Task<LoginResultDto> RefreshAsync(RefreshTokenDto dto, CancellationToken cancellationToken = default)
+    public async Task<LoginResultDto> RefreshAsync(
+        RefreshTokenDto dto,
+        SessionContextDto context,
+        CancellationToken cancellationToken = default)
     {
         var tokenHash = _refreshTokenProvider.Hash(dto.RefreshToken);
         var session = await _refreshSessionRepository.GetByTokenHashAsync(tokenHash, cancellationToken);
@@ -83,17 +99,35 @@ public class AuthService : IAuthService
             throw new AuthenticationException("Invalid or expired refresh token.");
 
         var replacement = _refreshTokenProvider.Generate();
-        session.RevokedAtUtc = DateTime.UtcNow;
+        var now = DateTime.UtcNow;
+        session.RevokedAtUtc = now;
+        session.RevokedReason = RefreshSessionRevocationReasons.Rotated;
+        session.LastSeenAtUtc = now;
+        session.LastSeenIp = context.IpAddress;
         session.ReplacedByTokenHash = _refreshTokenProvider.Hash(replacement.Token);
 
         await _refreshSessionRepository.UpdateAsync(session, cancellationToken);
-        await _refreshSessionRepository.CreateAsync(new RefreshSession
+        var replacementSession = new RefreshSession
         {
             UserId = user.Id,
             TokenHash = session.ReplacedByTokenHash,
-            CreatedAtUtc = DateTime.UtcNow,
+            UserAgent = context.UserAgent,
+            CreatedByIp = context.IpAddress,
+            LastSeenIp = context.IpAddress,
+            CreatedAtUtc = now,
+            LastSeenAtUtc = now,
             ExpiresAtUtc = replacement.ExpiresAtUtc
-        }, cancellationToken);
+        };
+
+        await _refreshSessionRepository.CreateAsync(replacementSession, cancellationToken);
+
+        await WriteAuditEventAsync(
+            user.Id,
+            replacementSession.Id,
+            AuthAuditEventTypes.Refresh,
+            "Refresh token rotated.",
+            context,
+            cancellationToken);
 
         var token = _jwtTokenGenerator.Generate(user);
         return new LoginResultDto
@@ -115,7 +149,19 @@ public class AuthService : IAuthService
             return;
 
         session.RevokedAtUtc = DateTime.UtcNow;
+        session.RevokedReason = RefreshSessionRevocationReasons.Logout;
         await _refreshSessionRepository.UpdateAsync(session, cancellationToken);
+        await WriteAuditEventAsync(
+            session.UserId,
+            session.Id,
+            AuthAuditEventTypes.Logout,
+            "Refresh session revoked by logout.",
+            new SessionContextDto
+            {
+                IpAddress = session.LastSeenIp ?? session.CreatedByIp,
+                UserAgent = session.UserAgent
+            },
+            cancellationToken);
     }
 
     public async Task ResetPasswordAsync(string userId, ResetPasswordDto dto, CancellationToken cancellationToken = default)
@@ -134,7 +180,58 @@ public class AuthService : IAuthService
         await _refreshSessionRepository.RevokeActiveSessionsByUserIdAsync(
             user.Id,
             DateTime.UtcNow,
+            RefreshSessionRevocationReasons.PasswordReset,
             cancellationToken);
+        await WriteAuditEventAsync(
+            user.Id,
+            null,
+            AuthAuditEventTypes.ResetPassword,
+            "Password reset completed and active sessions revoked.",
+            null,
+            cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<SessionDto>> GetSessionsAsync(
+        string userId,
+        string? currentRefreshToken,
+        CancellationToken cancellationToken = default)
+    {
+        string? currentRefreshTokenHash = null;
+
+        if (!string.IsNullOrWhiteSpace(currentRefreshToken))
+            currentRefreshTokenHash = _refreshTokenProvider.Hash(currentRefreshToken);
+
+        return await _refreshSessionReader.GetByUserIdAsync(userId, currentRefreshTokenHash, cancellationToken);
+    }
+
+    public async Task LogoutAllAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+        if (user is null || !user.IsActive)
+            throw new AuthenticationException("Invalid user.");
+
+        user.SecurityStamp = CreateSecurityStamp();
+        await _userRepository.UpdateAsync(user, cancellationToken);
+        await _refreshSessionRepository.RevokeActiveSessionsByUserIdAsync(
+            user.Id,
+            DateTime.UtcNow,
+            RefreshSessionRevocationReasons.LogoutAll,
+            cancellationToken);
+        await WriteAuditEventAsync(
+            user.Id,
+            null,
+            AuthAuditEventTypes.LogoutAll,
+            "All active sessions were revoked.",
+            null,
+            cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<AuthAuditEventDto>> GetAuditTrailAsync(
+        string userId,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        return await _authAuditReader.GetRecentByUserIdAsync(userId, limit, cancellationToken);
     }
 
     private static string NormalizeUsername(string username) =>
@@ -157,7 +254,11 @@ public class AuthService : IAuthService
         IsAdmin = user.IsAdmin
     };
 
-    private async Task<LoginResultDto> IssueTokensAsync(User user, CancellationToken cancellationToken)
+    private async Task<LoginResultDto> IssueTokensAsync(
+        User user,
+        SessionContextDto context,
+        string auditEventType,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(user.SecurityStamp))
         {
@@ -167,14 +268,29 @@ public class AuthService : IAuthService
 
         var accessToken = _jwtTokenGenerator.Generate(user);
         var refreshToken = _refreshTokenProvider.Generate();
+        var now = DateTime.UtcNow;
 
-        await _refreshSessionRepository.CreateAsync(new RefreshSession
+        var session = new RefreshSession
         {
             UserId = user.Id,
             TokenHash = _refreshTokenProvider.Hash(refreshToken.Token),
-            CreatedAtUtc = DateTime.UtcNow,
+            UserAgent = context.UserAgent,
+            CreatedByIp = context.IpAddress,
+            LastSeenIp = context.IpAddress,
+            CreatedAtUtc = now,
+            LastSeenAtUtc = now,
             ExpiresAtUtc = refreshToken.ExpiresAtUtc
-        }, cancellationToken);
+        };
+
+        await _refreshSessionRepository.CreateAsync(session, cancellationToken);
+
+        await WriteAuditEventAsync(
+            user.Id,
+            session.Id,
+            auditEventType,
+            "Session created.",
+            context,
+            cancellationToken);
 
         return new LoginResultDto
         {
@@ -184,5 +300,25 @@ public class AuthService : IAuthService
             RefreshTokenExpiresAtUtc = refreshToken.ExpiresAtUtc,
             User = Map(user)
         };
+    }
+
+    private Task WriteAuditEventAsync(
+        string userId,
+        string? refreshSessionId,
+        string eventType,
+        string detail,
+        SessionContextDto? context,
+        CancellationToken cancellationToken)
+    {
+        return _authAuditRepository.CreateAsync(new AuthAuditEvent
+        {
+            UserId = userId,
+            RefreshSessionId = refreshSessionId,
+            EventType = eventType,
+            Detail = detail,
+            UserAgent = context?.UserAgent,
+            IpAddress = context?.IpAddress,
+            OccurredAtUtc = DateTime.UtcNow
+        }, cancellationToken);
     }
 }

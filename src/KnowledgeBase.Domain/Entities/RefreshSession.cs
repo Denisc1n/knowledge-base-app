@@ -10,8 +10,13 @@ public class RefreshSession
     public string Id { get; set; } = default!;
     public string UserId { get; set; } = default!;
     public string TokenHash { get; set; } = default!;
+    public string? UserAgent { get; set; }
+    public string? CreatedByIp { get; set; }
+    public string? LastSeenIp { get; set; }
     public DateTime CreatedAtUtc { get; set; }
+    public DateTime LastSeenAtUtc { get; set; }
     public DateTime ExpiresAtUtc { get; set; }
     public DateTime? RevokedAtUtc { get; set; }
+    public string? RevokedReason { get; set; }
     public string? ReplacedByTokenHash { get; set; }
 }

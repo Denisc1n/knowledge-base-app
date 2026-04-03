@@ -13,6 +13,7 @@ namespace KnowledgeBase.Api.Controllers;
 [ApiController]
 [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
 [Route("admin/users")]
+[Route("api/v1/admin/users")]
 public class AdminUsersController : ControllerBase
 {
     private readonly IAdminService _adminService;

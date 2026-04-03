@@ -11,6 +11,7 @@ namespace KnowledgeBase.Api.Controllers;
 [ApiController]
 [Authorize(Policy = AuthorizationPolicies.AuthenticatedUser)]
 [Route("api/[controller]")]
+[Route("api/v1/[controller]")]
 public class NotesController : ControllerBase
 {
     private readonly INoteService _noteService;

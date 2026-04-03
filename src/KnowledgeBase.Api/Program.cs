@@ -1,17 +1,35 @@
 using FluentValidation.AspNetCore;
+using KnowledgeBase.Api.HealthChecks;
 using KnowledgeBase.Api.Extensions;
+using KnowledgeBase.Api.Observability;
 using KnowledgeBase.Api.Security;
 using KnowledgeBase.Domain.Abstractions;
 using KnowledgeBase.Infrastructure.DependencyInjection;
 using KnowledgeBase.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using System.Security.Claims;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Logging.ClearProviders();
+builder.Logging.AddJsonConsole(options =>
+{
+    options.IncludeScopes = true;
+    options.TimestampFormat = "O";
+});
+builder.Logging.Configure(options =>
+{
+    options.ActivityTrackingOptions =
+        ActivityTrackingOptions.SpanId |
+        ActivityTrackingOptions.TraceId |
+        ActivityTrackingOptions.ParentId;
+});
 
 builder.Services.AddProblemDetails();
 builder.Services.AddControllers();
@@ -41,6 +59,9 @@ builder.Services.AddSwaggerGen(options =>
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddApplicationServices();
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddHealthChecks()
+    .AddCheck("self", () => HealthCheckResult.Healthy("API is running."))
+    .AddCheck<MongoHealthCheck>("mongo");
 
 var jwtSettings = builder.Configuration
     .GetSection(JwtSettings.SectionName)
@@ -65,9 +86,21 @@ builder.Services
         {
             OnChallenge = async context =>
             {
+                var logger = context.HttpContext.RequestServices
+                    .GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("KnowledgeBase.Api.Security.Jwt");
+
                 context.HandleResponse();
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 context.Response.ContentType = "application/problem+json";
+                context.Response.Headers[ApiVersioningConventions.SupportedVersionsHeader] = "1.0";
+
+                logger.LogWarning(
+                    "JWT challenge issued for {Method} {Path}. Error: {Error}; Description: {Description}",
+                    context.Request.Method,
+                    context.Request.Path,
+                    context.Error,
+                    context.ErrorDescription);
 
                 await context.Response.WriteAsJsonAsync(new ProblemDetails
                 {
@@ -82,8 +115,20 @@ builder.Services
             },
             OnForbidden = async context =>
             {
+                var logger = context.HttpContext.RequestServices
+                    .GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("KnowledgeBase.Api.Security.Jwt");
+
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 context.Response.ContentType = "application/problem+json";
+                context.Response.Headers[ApiVersioningConventions.SupportedVersionsHeader] = "1.0";
+
+                logger.LogWarning(
+                    "JWT forbidden response for {Method} {Path} and user {UserId}.",
+                    context.Request.Method,
+                    context.Request.Path,
+                    context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier)
+                        ?? context.Principal?.FindFirstValue("sub"));
 
                 await context.Response.WriteAsJsonAsync(new ProblemDetails
                 {
@@ -96,12 +141,16 @@ builder.Services
             },
             OnTokenValidated = async context =>
             {
+                var logger = context.HttpContext.RequestServices
+                    .GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("KnowledgeBase.Api.Security.Jwt");
                 var userId = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier)
                     ?? context.Principal?.FindFirstValue("sub");
                 var tokenSecurityStamp = context.Principal?.FindFirstValue("sstamp");
 
                 if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(tokenSecurityStamp))
                 {
+                    logger.LogWarning("JWT validation failed due to missing required claims.");
                     context.Fail("Invalid token.");
                     return;
                 }
@@ -110,7 +159,15 @@ builder.Services
                 var user = await userRepository.GetByIdAsync(userId, context.HttpContext.RequestAborted);
 
                 if (user is null || !user.IsActive || user.SecurityStamp != tokenSecurityStamp)
+                {
+                    logger.LogWarning(
+                        "JWT validation failed for user {UserId}. UserExists: {UserExists}; IsActive: {IsActive}; SecurityStampMatches: {SecurityStampMatches}.",
+                        userId,
+                        user is not null,
+                        user?.IsActive,
+                        user?.SecurityStamp == tokenSecurityStamp);
                     context.Fail("Invalid token.");
+                }
             }
         };
     });
@@ -146,6 +203,12 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 app.UseExceptionHandler();
+app.Use(async (context, next) =>
+{
+    context.Response.Headers[ApiVersioningConventions.SupportedVersionsHeader] = "1.0";
+    await next();
+});
+app.UseCorrelationId();
 
 if (app.Environment.IsDevelopment())
 {
@@ -157,6 +220,22 @@ app.UseCors("frontend");
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    ResponseWriter = HealthCheckResponseWriter.WriteAsync
+});
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = check => check.Name == "self",
+    ResponseWriter = HealthCheckResponseWriter.WriteAsync
+});
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Name is "self" or "mongo",
+    ResponseWriter = HealthCheckResponseWriter.WriteAsync
+});
 app.MapControllers();
 
 app.Run();
+
+public partial class Program;

@@ -71,6 +71,7 @@ The API uses JWT access tokens plus refresh sessions.
 - the React frontend should call auth endpoints with `credentials: 'include'`
 - refresh-token rotation is used, so each refresh invalidates the previous refresh token
 - access tokens also carry a user `SecurityStamp`, so tokens issued before a password reset become invalid
+- all endpoints are also available under the `v1` route convention, for example `/api/v1/auth/login` and `/api/v1/notes`
 
 ### Auth Endpoints
 
@@ -80,7 +81,10 @@ The API uses JWT access tokens plus refresh sessions.
 | `POST` | `/api/auth/login` | Return an access token and set refresh-token cookie |
 | `POST` | `/api/auth/refresh` | Rotate refresh token and return a new access token |
 | `POST` | `/api/auth/logout` | Revoke refresh session and clear refresh-token cookie |
+| `GET` | `/api/auth/sessions` | List the current user's known sessions/devices |
+| `POST` | `/api/auth/logout-all` | Revoke all current sessions for the current user |
 | `POST` | `/api/auth/reset-password` | Change the current user's password, revoke all sessions, and clear the refresh-token cookie |
+| `GET` | `/api/auth/audit?limit=20` | Return recent auth/security events for the current user |
 
 ### Password Reset Behavior
 
@@ -127,6 +131,81 @@ All note endpoints require authentication.
 | `PUT` | `/api/notes/{id}` | Fully update an owned note |
 | `PATCH` | `/api/notes/{id}` | Partially update an owned note |
 | `DELETE` | `/api/notes/{id}` | Delete an owned note |
+
+## Observability
+
+The API includes a small built-in observability baseline:
+
+- structured JSON console logging
+- per-request correlation ids
+- auth/security event logs
+- health endpoints for liveness and readiness
+
+### Correlation Header
+
+Every response includes an `X-Correlation-Id` header.
+
+- if the client sends `X-Correlation-Id`, the API reuses it
+- otherwise the API generates one
+- the same value is added to the logging scope so request logs and auth/security logs can be tied together
+
+### Health Endpoints
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `GET` | `/health` | Overall application health summary |
+| `GET` | `/health/live` | Liveness probe for the API process |
+| `GET` | `/health/ready` | Readiness probe for API + MongoDB |
+
+Example readiness response:
+
+```json
+{
+  "status": "Healthy",
+  "totalDuration": 12.34,
+  "entries": {
+    "self": {
+      "status": "Healthy",
+      "description": "API is running.",
+      "duration": 0.12,
+      "error": null
+    },
+    "mongo": {
+      "status": "Healthy",
+      "description": "MongoDB is reachable.",
+      "duration": 12.22,
+      "error": null
+    }
+  }
+}
+```
+
+### Monitoring Note
+
+For deployment:
+
+- use `/health/live` as a liveness probe so the platform only checks whether the API process is alive
+- use `/health/ready` as a readiness probe so traffic is only sent to instances that can also reach MongoDB
+- alert on repeated non-healthy `/health/ready` responses, because those usually indicate a database connectivity or startup issue rather than a simple request-level failure
+
+## API Versioning
+
+The API now exposes versioned routes under `v1` without breaking the existing unversioned routes.
+
+Examples:
+
+- `/api/v1/auth/login`
+- `/api/v1/auth/logout-all`
+- `/api/v1/notes`
+- `/api/v1/admin/users`
+
+The API also returns:
+
+```text
+api-supported-versions: 1.0
+```
+
+This gives the frontend a stable route convention for new work while preserving backward compatibility for existing clients.
 
 ## Core Technologies
 
@@ -196,12 +275,24 @@ Run the unit tests with:
 dotnet test KnowledgeBase.slnx
 ```
 
+Run the integration tests with:
+
+```powershell
+dotnet test tests/KnowledgeBase.Api.IntegrationTests
+```
+
 Current unit coverage focuses on:
 
 - note service behavior
 - auth service behavior
 - reset-password auth behavior
 - request validation rules
+
+There is also API integration coverage for:
+
+- `v1` route availability
+- health endpoints
+- correlation-id response behavior
 
 ## Frontend Integration Notes
 
@@ -224,6 +315,7 @@ src/
 
 tests/
   KnowledgeBase.Application.UnitTests
+  KnowledgeBase.Api.IntegrationTests
 ```
 
 ## License

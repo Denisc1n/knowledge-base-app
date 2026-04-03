@@ -12,6 +12,9 @@ public class AuthServiceTests
 {
     private readonly IUserRepository _userRepository;
     private readonly IRefreshSessionRepository _refreshSessionRepository;
+    private readonly IRefreshSessionReader _refreshSessionReader;
+    private readonly IAuthAuditRepository _authAuditRepository;
+    private readonly IAuthAuditReader _authAuditReader;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
     private readonly IRefreshTokenProvider _refreshTokenProvider;
@@ -21,11 +24,17 @@ public class AuthServiceTests
     {
         _userRepository = Substitute.For<IUserRepository>();
         _refreshSessionRepository = Substitute.For<IRefreshSessionRepository>();
+        _refreshSessionReader = Substitute.For<IRefreshSessionReader>();
+        _authAuditRepository = Substitute.For<IAuthAuditRepository>();
+        _authAuditReader = Substitute.For<IAuthAuditReader>();
         _passwordHasher = Substitute.For<IPasswordHasher>();
         _jwtTokenGenerator = Substitute.For<IJwtTokenGenerator>();
         _refreshTokenProvider = Substitute.For<IRefreshTokenProvider>();
         _service = new AuthService(
             _userRepository,
+            _refreshSessionReader,
+            _authAuditRepository,
+            _authAuditReader,
             _passwordHasher,
             _jwtTokenGenerator,
             _refreshSessionRepository,
@@ -129,6 +138,10 @@ public class AuthServiceTests
         {
             Username = "  Jane ",
             Password = "Password123!"
+        }, new SessionContextDto
+        {
+            IpAddress = "127.0.0.1",
+            UserAgent = "UnitTestBrowser"
         });
 
         Assert.Equal("jwt-token", result.AccessToken);
@@ -138,7 +151,15 @@ public class AuthServiceTests
         await _refreshSessionRepository.Received(1).CreateAsync(
             Arg.Is<RefreshSession>(s =>
                 s.UserId == "user-2" &&
-                s.TokenHash == "refresh-token-hash"),
+                s.TokenHash == "refresh-token-hash" &&
+                s.CreatedByIp == "127.0.0.1" &&
+                s.LastSeenIp == "127.0.0.1" &&
+                s.UserAgent == "UnitTestBrowser"),
+            Arg.Any<CancellationToken>());
+        await _authAuditRepository.Received(1).CreateAsync(
+            Arg.Is<AuthAuditEvent>(x =>
+                x.UserId == "user-2" &&
+                x.EventType == "login"),
             Arg.Any<CancellationToken>());
     }
 
@@ -165,7 +186,7 @@ public class AuthServiceTests
             {
                 Username = "john",
                 Password = "Password123!"
-            }));
+            }, new SessionContextDto()));
 
         Assert.Equal("This user is inactive.", ex.Message);
     }
@@ -193,7 +214,7 @@ public class AuthServiceTests
             {
                 Username = "john",
                 Password = "wrong"
-            }));
+            }, new SessionContextDto()));
 
         Assert.Equal("Invalid username or password.", ex.Message);
     }
@@ -239,17 +260,30 @@ public class AuthServiceTests
         var result = await _service.RefreshAsync(new RefreshTokenDto
         {
             RefreshToken = "old-refresh-token"
+        }, new SessionContextDto
+        {
+            IpAddress = "192.168.0.50",
+            UserAgent = "UnitTestBrowser/2.0"
         });
 
         Assert.Equal("new-access-token", result.AccessToken);
         Assert.Equal("new-refresh-token", result.RefreshToken);
         Assert.Equal("new-hash", session.ReplacedByTokenHash);
         Assert.NotNull(session.RevokedAtUtc);
+        Assert.Equal("rotated", session.RevokedReason);
+        Assert.Equal("192.168.0.50", session.LastSeenIp);
         await _refreshSessionRepository.Received(1).UpdateAsync(session, Arg.Any<CancellationToken>());
         await _refreshSessionRepository.Received(1).CreateAsync(
             Arg.Is<RefreshSession>(s =>
                 s.UserId == "user-5" &&
-                s.TokenHash == "new-hash"),
+                s.TokenHash == "new-hash" &&
+                s.CreatedByIp == "192.168.0.50" &&
+                s.UserAgent == "UnitTestBrowser/2.0"),
+            Arg.Any<CancellationToken>());
+        await _authAuditRepository.Received(1).CreateAsync(
+            Arg.Is<AuthAuditEvent>(x =>
+                x.UserId == "user-5" &&
+                x.EventType == "refresh"),
             Arg.Any<CancellationToken>());
     }
 
@@ -268,7 +302,7 @@ public class AuthServiceTests
             });
 
         var ex = await Assert.ThrowsAsync<AuthenticationException>(() =>
-            _service.RefreshAsync(new RefreshTokenDto { RefreshToken = "expired" }));
+            _service.RefreshAsync(new RefreshTokenDto { RefreshToken = "expired" }, new SessionContextDto()));
 
         Assert.Equal("Invalid or expired refresh token.", ex.Message);
     }
@@ -294,7 +328,14 @@ public class AuthServiceTests
         });
 
         Assert.NotNull(session.RevokedAtUtc);
+        Assert.Equal("logout", session.RevokedReason);
         await _refreshSessionRepository.Received(1).UpdateAsync(session, Arg.Any<CancellationToken>());
+        await _authAuditRepository.Received(1).CreateAsync(
+            Arg.Is<AuthAuditEvent>(x =>
+                x.UserId == "user-7" &&
+                x.RefreshSessionId == "session-3" &&
+                x.EventType == "logout"),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -329,6 +370,12 @@ public class AuthServiceTests
         await _refreshSessionRepository.Received(1).RevokeActiveSessionsByUserIdAsync(
             "user-8",
             Arg.Any<DateTime>(),
+            "password_reset",
+            Arg.Any<CancellationToken>());
+        await _authAuditRepository.Received(1).CreateAsync(
+            Arg.Is<AuthAuditEvent>(x =>
+                x.UserId == "user-8" &&
+                x.EventType == "reset_password"),
             Arg.Any<CancellationToken>());
     }
 
@@ -362,6 +409,77 @@ public class AuthServiceTests
         await _refreshSessionRepository.DidNotReceive().RevokeActiveSessionsByUserIdAsync(
             Arg.Any<string>(),
             Arg.Any<DateTime>(),
+            Arg.Any<string>(),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetSessionsAsync_WhenCurrentRefreshTokenIsProvided_MarksCurrentSession()
+    {
+        var sessions = new List<SessionDto>
+        {
+            new() { Id = "session-1", IsCurrent = true, IsActive = true },
+            new() { Id = "session-2", IsCurrent = false, IsActive = true }
+        };
+
+        _refreshTokenProvider.Hash("current-refresh-token").Returns("current-refresh-token-hash");
+        _refreshSessionReader.GetByUserIdAsync("user-10", "current-refresh-token-hash", Arg.Any<CancellationToken>())
+            .Returns(sessions);
+
+        var result = await _service.GetSessionsAsync("user-10", "current-refresh-token");
+
+        Assert.Equal(2, result.Count);
+        Assert.Single(result, x => x.IsCurrent);
+    }
+
+    [Fact]
+    public async Task LogoutAllAsync_WhenUserIsValid_RotatesSecurityStamp_RevokesSessions_AndWritesAuditEvent()
+    {
+        var user = new User
+        {
+            Id = "user-11",
+            FirstName = "Jane",
+            LastName = "Doe",
+            Username = "jane",
+            Email = "jane@example.com",
+            PasswordHash = "hash",
+            SecurityStamp = "old-stamp",
+            IsActive = true
+        };
+
+        _userRepository.GetByIdAsync("user-11", Arg.Any<CancellationToken>()).Returns(user);
+
+        await _service.LogoutAllAsync("user-11");
+
+        Assert.NotEqual("old-stamp", user.SecurityStamp);
+        await _userRepository.Received(1).UpdateAsync(user, Arg.Any<CancellationToken>());
+        await _refreshSessionRepository.Received(1).RevokeActiveSessionsByUserIdAsync(
+            "user-11",
+            Arg.Any<DateTime>(),
+            "logout_all",
+            Arg.Any<CancellationToken>());
+        await _authAuditRepository.Received(1).CreateAsync(
+            Arg.Is<AuthAuditEvent>(x =>
+                x.UserId == "user-11" &&
+                x.EventType == "logout_all"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetAuditTrailAsync_ReturnsProjectedAuditEntries()
+    {
+        var events = new List<AuthAuditEventDto>
+        {
+            new() { EventType = "login" },
+            new() { EventType = "logout_all" }
+        };
+
+        _authAuditReader.GetRecentByUserIdAsync("user-12", 25, Arg.Any<CancellationToken>())
+            .Returns(events);
+
+        var result = await _service.GetAuditTrailAsync("user-12", 25);
+
+        Assert.Equal(2, result.Count);
+        await _authAuditReader.Received(1).GetRecentByUserIdAsync("user-12", 25, Arg.Any<CancellationToken>());
     }
 }

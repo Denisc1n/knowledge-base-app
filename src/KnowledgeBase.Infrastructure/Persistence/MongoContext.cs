@@ -26,6 +26,9 @@ public class MongoContext
     public IMongoCollection<RefreshSession> RefreshSessions =>
         _database.GetCollection<RefreshSession>(_settings.RefreshSessionsCollectionName);
 
+    public IMongoCollection<AuthAuditEvent> AuthAuditEvents =>
+        _database.GetCollection<AuthAuditEvent>("authAuditEvents");
+
     private void EnsureIndexes()
     {
         var usernameIndex = new CreateIndexModel<User>(
@@ -51,5 +54,13 @@ public class MongoContext
             Builders<RefreshSession>.IndexKeys.Ascending(x => x.UserId));
 
         RefreshSessions.Indexes.CreateMany([tokenHashIndex, userIdIndex]);
+
+        var authAuditUserIdIndex = new CreateIndexModel<AuthAuditEvent>(
+            Builders<AuthAuditEvent>.IndexKeys.Ascending(x => x.UserId));
+
+        var authAuditOccurredAtIndex = new CreateIndexModel<AuthAuditEvent>(
+            Builders<AuthAuditEvent>.IndexKeys.Descending(x => x.OccurredAtUtc));
+
+        AuthAuditEvents.Indexes.CreateMany([authAuditUserIdIndex, authAuditOccurredAtIndex]);
     }
 }

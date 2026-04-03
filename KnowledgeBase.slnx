@@ -4,4 +4,5 @@
   <Project Path="src/KnowledgeBase.Domain/KnowledgeBase.Domain.csproj" />
   <Project Path="src/KnowledgeBase.Infrastructure/KnowledgeBase.Infrastructure.csproj" />
   <Project Path="tests/KnowledgeBase.Application.UnitTests/KnowledgeBase.Application.UnitTests.csproj" />
+  <Project Path="tests/KnowledgeBase.Api.IntegrationTests/KnowledgeBase.Api.IntegrationTests.csproj" />
 </Solution>

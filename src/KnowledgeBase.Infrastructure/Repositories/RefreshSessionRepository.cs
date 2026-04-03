@@ -42,7 +42,22 @@ public class RefreshSessionRepository : IRefreshSessionRepository
         DateTime revokedAtUtc,
         CancellationToken cancellationToken = default)
     {
-        var update = Builders<RefreshSession>.Update.Set(x => x.RevokedAtUtc, revokedAtUtc);
+        return await RevokeActiveSessionsByUserIdAsync(
+            userId,
+            revokedAtUtc,
+            reason: null,
+            cancellationToken);
+    }
+
+    public async Task<long> RevokeActiveSessionsByUserIdAsync(
+        string userId,
+        DateTime revokedAtUtc,
+        string? reason,
+        CancellationToken cancellationToken = default)
+    {
+        var update = Builders<RefreshSession>.Update
+            .Set(x => x.RevokedAtUtc, revokedAtUtc)
+            .Set(x => x.RevokedReason, reason);
 
         var result = await _context.RefreshSessions.UpdateManyAsync(
             x => x.UserId == userId && !x.RevokedAtUtc.HasValue,
