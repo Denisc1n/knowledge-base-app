@@ -12,7 +12,6 @@ namespace KnowledgeBase.Api.Controllers;
 
 [ApiController]
 [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
-[Route("admin/users")]
 [Route("api/v1/admin/users")]
 public class AdminUsersController : ControllerBase
 {
@@ -47,7 +46,7 @@ public class AdminUsersController : ControllerBase
         if (updated is null)
             return this.NotFoundError("The requested user was not found.", ErrorCodes.UsersNotFound, "https://httpstatuses.com/404");
 
-        return Ok(Map(updated));
+        return Ok(updated.ToResponse());
     }
 
     [HttpDelete("{userId}/notes/{noteId}")]
@@ -64,15 +63,4 @@ public class AdminUsersController : ControllerBase
             ? NoContent()
             : this.NotFoundError("The requested note was not found.", ErrorCodes.NotesNotFound, "https://httpstatuses.com/404");
     }
-
-    private static UserResponse Map(UserDto dto) => new()
-    {
-        Id = dto.Id,
-        FirstName = dto.FirstName,
-        LastName = dto.LastName,
-        Username = dto.Username,
-        Email = dto.Email,
-        IsActive = dto.IsActive,
-        IsAdmin = dto.IsAdmin
-    };
 }

@@ -13,9 +13,8 @@ using Microsoft.Extensions.Options;
 namespace KnowledgeBase.Api.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
 [Route("api/v1/[controller]")]
-public class AuthController : ControllerBase
+public class AuthController : ApiControllerBase
 {
     private readonly IAuthService _authService;
     private readonly RefreshTokenSettings _refreshTokenSettings;
@@ -39,19 +38,10 @@ public class AuthController : ControllerBase
         [FromBody] SignupRequest request,
         CancellationToken cancellationToken)
     {
-        var dto = new SignupUserDto
-        {
-            FirstName = request.FirstName,
-            LastName = request.LastName,
-            Username = request.Username,
-            Email = request.Email,
-            Password = request.Password
-        };
-
         try
         {
-            var created = await _authService.SignupAsync(dto, cancellationToken);
-            return StatusCode(StatusCodes.Status201Created, Map(created));
+            var created = await _authService.SignupAsync(request.ToDto(), cancellationToken);
+            return StatusCode(StatusCodes.Status201Created, created.ToResponse());
         }
         catch (DuplicateUserException ex)
         {
@@ -71,21 +61,15 @@ public class AuthController : ControllerBase
         [FromBody] LoginRequest request,
         CancellationToken cancellationToken)
     {
-        var dto = new LoginDto
-        {
-            Username = request.Username,
-            Password = request.Password
-        };
-
         try
         {
-            var result = await _authService.LoginAsync(dto, CreateSessionContext(), cancellationToken);
+            var result = await _authService.LoginAsync(request.ToDto(), CreateSessionContext(), cancellationToken);
             _logger.LogInformation(
                 "User {Username} logged in successfully from {IpAddress}.",
                 result.User.Username,
                 HttpContext.Connection.RemoteIpAddress?.ToString());
             AppendRefreshTokenCookie(result.RefreshToken, result.RefreshTokenExpiresAtUtc);
-            return Ok(Map(result));
+            return Ok(result.ToResponse());
         }
         catch (AuthenticationException ex)
         {
@@ -118,16 +102,13 @@ public class AuthController : ControllerBase
 
         try
         {
-            var result = await _authService.RefreshAsync(new RefreshTokenDto
-            {
-                RefreshToken = refreshToken
-            }, CreateSessionContext(), cancellationToken);
+            var result = await _authService.RefreshAsync(refreshToken.ToDto(), CreateSessionContext(), cancellationToken);
 
             _logger.LogInformation(
                 "Refresh token rotation completed for user {UserId}.",
                 result.User.Id);
             AppendRefreshTokenCookie(result.RefreshToken, result.RefreshTokenExpiresAtUtc);
-            return Ok(Map(result));
+            return Ok(result.ToResponse());
         }
         catch (AuthenticationException ex)
         {
@@ -154,10 +135,7 @@ public class AuthController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(refreshToken))
         {
-            await _authService.LogoutAsync(new RefreshTokenDto
-            {
-                RefreshToken = refreshToken
-            }, cancellationToken);
+            await _authService.LogoutAsync(refreshToken.ToDto(), cancellationToken);
             _logger.LogInformation(
                 "Logout completed for refresh token request from {IpAddress}.",
                 HttpContext.Connection.RemoteIpAddress?.ToString());
@@ -174,19 +152,16 @@ public class AuthController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetSessions(CancellationToken cancellationToken)
     {
-        var userId = User.GetCurrentUserId();
-        if (string.IsNullOrWhiteSpace(userId))
-            return this.UnauthorizedError(
-                "User identifier is missing.",
-                code: ErrorCodes.AuthMissingUserId,
-                type: "https://httpstatuses.com/401");
+        var userId = RequireCurrentUserId();
+        if (userId.Result is not null)
+            return userId.Result;
 
         var sessions = await _authService.GetSessionsAsync(
-            userId,
+            userId.Value!,
             ResolveRefreshToken(null),
             cancellationToken);
 
-        return Ok(sessions.Select(Map));
+        return Ok(sessions.Select(x => x.ToResponse()));
     }
 
     [Authorize(Policy = AuthorizationPolicies.AuthenticatedUser)]
@@ -196,23 +171,20 @@ public class AuthController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> LogoutAll(CancellationToken cancellationToken)
     {
-        var userId = User.GetCurrentUserId();
-        if (string.IsNullOrWhiteSpace(userId))
-            return this.UnauthorizedError(
-                "User identifier is missing.",
-                code: ErrorCodes.AuthMissingUserId,
-                type: "https://httpstatuses.com/401");
+        var userId = RequireCurrentUserId();
+        if (userId.Result is not null)
+            return userId.Result;
 
         try
         {
-            await _authService.LogoutAllAsync(userId, cancellationToken);
-            _logger.LogInformation("User {UserId} logged out all sessions.", userId);
+            await _authService.LogoutAllAsync(userId.Value!, cancellationToken);
+            _logger.LogInformation("User {UserId} logged out all sessions.", userId.Value);
             DeleteRefreshTokenCookie();
             return NoContent();
         }
         catch (AuthenticationException ex)
         {
-            _logger.LogWarning(ex, "Logout-all failed for user {UserId}.", userId);
+            _logger.LogWarning(ex, "Logout-all failed for user {UserId}.", userId.Value);
             return this.UnauthorizedError(
                 ex.Message,
                 code: ErrorCodes.AuthInvalidCredentials,
@@ -229,28 +201,21 @@ public class AuthController : ControllerBase
         [FromBody] ResetPasswordRequest request,
         CancellationToken cancellationToken)
     {
-        var userId = User.GetCurrentUserId();
-        if (string.IsNullOrWhiteSpace(userId))
-            return this.UnauthorizedError(
-                "User identifier is missing.",
-                code: ErrorCodes.AuthMissingUserId,
-                type: "https://httpstatuses.com/401");
+        var userId = RequireCurrentUserId();
+        if (userId.Result is not null)
+            return userId.Result;
 
         try
         {
-            await _authService.ResetPasswordAsync(userId, new ResetPasswordDto
-            {
-                CurrentPassword = request.CurrentPassword,
-                NewPassword = request.NewPassword
-            }, cancellationToken);
+            await _authService.ResetPasswordAsync(userId.Value!, request.ToDto(), cancellationToken);
 
-            _logger.LogInformation("Password reset completed for user {UserId}.", userId);
+            _logger.LogInformation("Password reset completed for user {UserId}.", userId.Value);
             DeleteRefreshTokenCookie();
             return NoContent();
         }
         catch (AuthenticationException ex)
         {
-            _logger.LogWarning(ex, "Password reset failed for user {UserId}.", userId);
+            _logger.LogWarning(ex, "Password reset failed for user {UserId}.", userId.Value);
             return this.UnauthorizedError(
                 ex.Message,
                 code: ErrorCodes.AuthInvalidCredentials,
@@ -267,25 +232,13 @@ public class AuthController : ControllerBase
         [FromQuery] int limit = 20,
         CancellationToken cancellationToken = default)
     {
-        var userId = User.GetCurrentUserId();
-        if (string.IsNullOrWhiteSpace(userId))
-            return this.UnauthorizedError(
-                "User identifier is missing.",
-                code: ErrorCodes.AuthMissingUserId,
-                type: "https://httpstatuses.com/401");
+        var userId = RequireCurrentUserId();
+        if (userId.Result is not null)
+            return userId.Result;
 
-        var auditEvents = await _authService.GetAuditTrailAsync(userId, limit, cancellationToken);
-        return Ok(auditEvents.Select(Map));
+        var auditEvents = await _authService.GetAuditTrailAsync(userId.Value!, limit, cancellationToken);
+        return Ok(auditEvents.Select(x => x.ToResponse()));
     }
-
-    private LoginResponse Map(LoginResultDto dto) => new()
-    {
-        AccessToken = dto.AccessToken,
-        ExpiresAtUtc = dto.ExpiresAtUtc,
-        RefreshAfterUtc = dto.ExpiresAtUtc.AddMinutes(-1),
-        RefreshTokenExpiresAtUtc = dto.RefreshTokenExpiresAtUtc,
-        User = Map(dto.User)
-    };
 
     private string? ResolveRefreshToken(string? requestRefreshToken)
     {
@@ -340,38 +293,4 @@ public class AuthController : ControllerBase
             ? parsed
             : SameSiteMode.Lax;
     }
-
-    private static UserResponse Map(UserDto dto) => new()
-    {
-        Id = dto.Id,
-        FirstName = dto.FirstName,
-        LastName = dto.LastName,
-        Username = dto.Username,
-        Email = dto.Email,
-        IsActive = dto.IsActive,
-        IsAdmin = dto.IsAdmin
-    };
-
-    private static SessionResponse Map(SessionDto dto) => new()
-    {
-        Id = dto.Id,
-        UserAgent = dto.UserAgent,
-        IpAddress = dto.IpAddress,
-        CreatedAtUtc = dto.CreatedAtUtc,
-        LastSeenAtUtc = dto.LastSeenAtUtc,
-        ExpiresAtUtc = dto.ExpiresAtUtc,
-        RevokedAtUtc = dto.RevokedAtUtc,
-        RevokedReason = dto.RevokedReason,
-        IsCurrent = dto.IsCurrent,
-        IsActive = dto.IsActive
-    };
-
-    private static AuthAuditEventResponse Map(AuthAuditEventDto dto) => new()
-    {
-        EventType = dto.EventType,
-        Detail = dto.Detail,
-        UserAgent = dto.UserAgent,
-        IpAddress = dto.IpAddress,
-        OccurredAtUtc = dto.OccurredAtUtc
-    };
 }

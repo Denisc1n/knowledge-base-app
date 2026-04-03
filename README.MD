@@ -17,7 +17,7 @@ The backend follows a layered architecture with Clean Architecture principles.
 
 - `KnowledgeBase.Api`: HTTP transport layer, controllers, request/response contracts, auth middleware setup
 - `KnowledgeBase.Application`: use cases, DTOs, validation, and service orchestration
-- `KnowledgeBase.Domain`: core entities and repository abstractions
+- `KnowledgeBase.Domain`: core entities, entity behavior, and repository abstractions
 - `KnowledgeBase.Infrastructure`: MongoDB persistence, Mongo query readers, JWT generation, password hashing, refresh-token support
 - `KnowledgeBase.Application.UnitTests`: unit tests using `xUnit` and `NSubstitute`
 
@@ -52,6 +52,37 @@ The backend now uses the same read/write split pattern for users and notes:
 - readers project Mongo documents directly into DTOs
 - application services return those projected DTOs without remapping them in memory
 
+### Domain Behavior
+
+The domain layer is no longer just passive data classes.
+
+- `Note` owns its normalization and update rules
+- `User` owns username/email normalization and security-stamp/password state transitions
+- application services orchestrate use cases, but the low-level business rules for entity state live closer to the entities themselves
+
+This keeps services smaller and makes entity behavior easier to test and reason about.
+
+### API Mapping
+
+The API layer uses centralized mapping extensions instead of controller-local mapping methods.
+
+- request contracts are converted to application DTOs in one place
+- application DTOs are converted to API response contracts in one place
+- controllers stay focused on HTTP concerns, authorization, and orchestration
+
+Current mapping entry point:
+
+- `ApiContractMappingExtensions`
+
+### Controller Base
+
+Authenticated controllers share a small controller base for common user-context handling.
+
+- current user id lookup is centralized
+- the standard unauthorized response for missing user identity is reused consistently
+
+This removes repeated claim-parsing boilerplate from controllers like `AuthController` and `NotesController`.
+
 Current examples:
 
 - notes:
@@ -71,24 +102,24 @@ The API uses JWT access tokens plus refresh sessions.
 - the React frontend should call auth endpoints with `credentials: 'include'`
 - refresh-token rotation is used, so each refresh invalidates the previous refresh token
 - access tokens also carry a user `SecurityStamp`, so tokens issued before a password reset become invalid
-- all endpoints are also available under the `v1` route convention, for example `/api/v1/auth/login` and `/api/v1/notes`
+- all API endpoints use the `v1` route convention, for example `/api/v1/auth/login` and `/api/v1/notes`
 
 ### Auth Endpoints
 
 | Method | Endpoint | Description |
 | --- | --- | --- |
-| `POST` | `/api/auth/signup` | Create a new user |
-| `POST` | `/api/auth/login` | Return an access token and set refresh-token cookie |
-| `POST` | `/api/auth/refresh` | Rotate refresh token and return a new access token |
-| `POST` | `/api/auth/logout` | Revoke refresh session and clear refresh-token cookie |
-| `GET` | `/api/auth/sessions` | List the current user's known sessions/devices |
-| `POST` | `/api/auth/logout-all` | Revoke all current sessions for the current user |
-| `POST` | `/api/auth/reset-password` | Change the current user's password, revoke all sessions, and clear the refresh-token cookie |
-| `GET` | `/api/auth/audit?limit=20` | Return recent auth/security events for the current user |
+| `POST` | `/api/v1/auth/signup` | Create a new user |
+| `POST` | `/api/v1/auth/login` | Return an access token and set refresh-token cookie |
+| `POST` | `/api/v1/auth/refresh` | Rotate refresh token and return a new access token |
+| `POST` | `/api/v1/auth/logout` | Revoke refresh session and clear refresh-token cookie |
+| `GET` | `/api/v1/auth/sessions` | List the current user's known sessions/devices |
+| `POST` | `/api/v1/auth/logout-all` | Revoke all current sessions for the current user |
+| `POST` | `/api/v1/auth/reset-password` | Change the current user's password, revoke all sessions, and clear the refresh-token cookie |
+| `GET` | `/api/v1/auth/audit?limit=20` | Return recent auth/security events for the current user |
 
 ### Password Reset Behavior
 
-`POST /api/auth/reset-password` requires authentication and expects:
+`POST /api/v1/auth/reset-password` requires authentication and expects:
 
 ```json
 {
@@ -124,13 +155,13 @@ All note endpoints require authentication.
 
 | Method | Endpoint | Description |
 | --- | --- | --- |
-| `POST` | `/api/notes` | Create a note for the current user |
-| `GET` | `/api/notes` | Get all notes for the current user |
-| `GET` | `/api/notes/{id}` | Get a single owned note |
-| `GET` | `/api/notes/search?q=` | Search only the current user's notes |
-| `PUT` | `/api/notes/{id}` | Fully update an owned note |
-| `PATCH` | `/api/notes/{id}` | Partially update an owned note |
-| `DELETE` | `/api/notes/{id}` | Delete an owned note |
+| `POST` | `/api/v1/notes` | Create a note for the current user |
+| `GET` | `/api/v1/notes` | Get all notes for the current user |
+| `GET` | `/api/v1/notes/{id}` | Get a single owned note |
+| `GET` | `/api/v1/notes/search?q=` | Search only the current user's notes |
+| `PUT` | `/api/v1/notes/{id}` | Fully update an owned note |
+| `PATCH` | `/api/v1/notes/{id}` | Partially update an owned note |
+| `DELETE` | `/api/v1/notes/{id}` | Delete an owned note |
 
 ## Observability
 
@@ -190,7 +221,7 @@ For deployment:
 
 ## API Versioning
 
-The API now exposes versioned routes under `v1` without breaking the existing unversioned routes.
+The API uses versioned routes under `v1`.
 
 Examples:
 
@@ -205,7 +236,7 @@ The API also returns:
 api-supported-versions: 1.0
 ```
 
-This gives the frontend a stable route convention for new work while preserving backward compatibility for existing clients.
+This gives the frontend a stable and explicit route convention for client integrations.
 
 ## Core Technologies
 
@@ -286,6 +317,7 @@ Current unit coverage focuses on:
 - note service behavior
 - auth service behavior
 - reset-password auth behavior
+- domain-backed note/user normalization behavior through service tests
 - request validation rules
 
 There is also API integration coverage for:

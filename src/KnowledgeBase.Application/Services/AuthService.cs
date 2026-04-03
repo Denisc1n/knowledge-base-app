@@ -40,8 +40,8 @@ public class AuthService : IAuthService
 
     public async Task<UserDto> SignupAsync(SignupUserDto dto, CancellationToken cancellationToken = default)
     {
-        var normalizedUsername = NormalizeUsername(dto.Username);
-        var normalizedEmail = NormalizeEmail(dto.Email);
+        var normalizedUsername = User.NormalizeUsername(dto.Username);
+        var normalizedEmail = User.NormalizeEmail(dto.Email);
 
         if (await _userRepository.UsernameExistsAsync(normalizedUsername, cancellationToken))
             throw new DuplicateUserException("username", normalizedUsername);
@@ -49,18 +49,13 @@ public class AuthService : IAuthService
         if (await _userRepository.EmailExistsAsync(normalizedEmail, cancellationToken))
             throw new DuplicateUserException("email", normalizedEmail);
 
-        var user = new User
-        {
-            FirstName = dto.FirstName.Trim(),
-            LastName = dto.LastName.Trim(),
-            Username = normalizedUsername,
-            Email = normalizedEmail,
-            PasswordHash = _passwordHasher.Hash(dto.Password),
-            SecurityStamp = CreateSecurityStamp(),
-            CreatedAtUtc = DateTime.UtcNow,
-            IsActive = true,
-            IsAdmin = false
-        };
+        var user = User.Create(
+            dto.FirstName,
+            dto.LastName,
+            dto.Username,
+            dto.Email,
+            _passwordHasher.Hash(dto.Password),
+            DateTime.UtcNow);
 
         var created = await _userRepository.CreateAsync(user, cancellationToken);
         return Map(created);
@@ -71,7 +66,7 @@ public class AuthService : IAuthService
         SessionContextDto context,
         CancellationToken cancellationToken = default)
     {
-        var normalizedUsername = NormalizeUsername(dto.Username);
+        var normalizedUsername = User.NormalizeUsername(dto.Username);
         var user = await _userRepository.GetByUsernameAsync(normalizedUsername, cancellationToken);
 
         if (user is null || !_passwordHasher.Verify(dto.Password, user.PasswordHash))
@@ -173,8 +168,7 @@ public class AuthService : IAuthService
         if (!_passwordHasher.Verify(dto.CurrentPassword, user.PasswordHash))
             throw new AuthenticationException("Current password is invalid.");
 
-        user.PasswordHash = _passwordHasher.Hash(dto.NewPassword);
-        user.SecurityStamp = CreateSecurityStamp();
+        user.UpdatePassword(_passwordHasher.Hash(dto.NewPassword));
 
         await _userRepository.UpdateAsync(user, cancellationToken);
         await _refreshSessionRepository.RevokeActiveSessionsByUserIdAsync(
@@ -210,7 +204,7 @@ public class AuthService : IAuthService
         if (user is null || !user.IsActive)
             throw new AuthenticationException("Invalid user.");
 
-        user.SecurityStamp = CreateSecurityStamp();
+        user.RotateSecurityStamp();
         await _userRepository.UpdateAsync(user, cancellationToken);
         await _refreshSessionRepository.RevokeActiveSessionsByUserIdAsync(
             user.Id,
@@ -234,15 +228,6 @@ public class AuthService : IAuthService
         return await _authAuditReader.GetRecentByUserIdAsync(userId, limit, cancellationToken);
     }
 
-    private static string NormalizeUsername(string username) =>
-        username.Trim().ToLowerInvariant();
-
-    private static string NormalizeEmail(string email) =>
-        email.Trim().ToLowerInvariant();
-
-    private static string CreateSecurityStamp() =>
-        Guid.NewGuid().ToString("N");
-
     private static UserDto Map(User user) => new()
     {
         Id = user.Id,
@@ -262,7 +247,7 @@ public class AuthService : IAuthService
     {
         if (string.IsNullOrWhiteSpace(user.SecurityStamp))
         {
-            user.SecurityStamp = CreateSecurityStamp();
+            user.RotateSecurityStamp();
             await _userRepository.UpdateAsync(user, cancellationToken);
         }
 

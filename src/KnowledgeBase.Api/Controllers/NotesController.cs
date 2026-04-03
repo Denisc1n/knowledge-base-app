@@ -10,9 +10,8 @@ namespace KnowledgeBase.Api.Controllers;
 
 [ApiController]
 [Authorize(Policy = AuthorizationPolicies.AuthenticatedUser)]
-[Route("api/[controller]")]
 [Route("api/v1/[controller]")]
-public class NotesController : ControllerBase
+public class NotesController : ApiControllerBase
 {
     private readonly INoteService _noteService;
 
@@ -29,22 +28,13 @@ public class NotesController : ControllerBase
         [FromBody] CreateNoteRequest request,
         CancellationToken cancellationToken)
     {
-        var userId = GetCurrentUserId();
-        if (userId is null)
-            return this.UnauthorizedError("User identifier is missing.", ErrorCodes.AuthMissingUserId, "https://httpstatuses.com/401");
+        var userId = RequireCurrentUserId();
+        if (userId.Result is not null)
+            return userId.Result;
 
-        var dto = new CreateNoteDto
-        {
-            Title = request.Title,
-            Content = request.Content,
-            Tags = request.Tags,
-            Category = request.Category,
-            Status = request.Status
-        };
+        var created = await _noteService.CreateAsync(userId.Value!, request.ToDto(), cancellationToken);
 
-        var created = await _noteService.CreateAsync(userId, dto, cancellationToken);
-
-        return CreatedAtAction(nameof(GetById), new { id = created.Id }, Map(created));
+        return CreatedAtAction(nameof(GetById), new { id = created.Id }, created.ToResponse());
     }
 
     [HttpGet]
@@ -53,12 +43,12 @@ public class NotesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
     {
-        var userId = GetCurrentUserId();
-        if (userId is null)
-            return this.UnauthorizedError("User identifier is missing.", ErrorCodes.AuthMissingUserId, "https://httpstatuses.com/401");
+        var userId = RequireCurrentUserId();
+        if (userId.Result is not null)
+            return userId.Result;
 
-        var notes = await _noteService.GetAllAsync(userId, cancellationToken);
-        return Ok(notes.Select(Map));
+        var notes = await _noteService.GetAllAsync(userId.Value!, cancellationToken);
+        return Ok(notes.Select(x => x.ToResponse()));
     }
 
     [HttpGet("{id}")]
@@ -68,15 +58,15 @@ public class NotesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetById(string id, CancellationToken cancellationToken)
     {
-        var userId = GetCurrentUserId();
-        if (userId is null)
-            return this.UnauthorizedError("User identifier is missing.", ErrorCodes.AuthMissingUserId, "https://httpstatuses.com/401");
+        var userId = RequireCurrentUserId();
+        if (userId.Result is not null)
+            return userId.Result;
 
-        var note = await _noteService.GetByIdAsync(id, userId, cancellationToken);
+        var note = await _noteService.GetByIdAsync(id, userId.Value!, cancellationToken);
         if (note is null)
             return this.NotFoundError("The requested note was not found.", ErrorCodes.NotesNotFound, "https://httpstatuses.com/404");
 
-        return Ok(Map(note));
+        return Ok(note.ToResponse());
     }
 
     [HttpGet("search")]
@@ -85,12 +75,12 @@ public class NotesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> Search([FromQuery] string q, CancellationToken cancellationToken)
     {
-        var userId = GetCurrentUserId();
-        if (userId is null)
-            return this.UnauthorizedError("User identifier is missing.", ErrorCodes.AuthMissingUserId, "https://httpstatuses.com/401");
+        var userId = RequireCurrentUserId();
+        if (userId.Result is not null)
+            return userId.Result;
 
-        var notes = await _noteService.SearchAsync(userId, q, cancellationToken);
-        return Ok(notes.Select(Map));
+        var notes = await _noteService.SearchAsync(userId.Value!, q, cancellationToken);
+        return Ok(notes.Select(x => x.ToResponse()));
     }
 
     [HttpPut("{id}")]
@@ -103,20 +93,11 @@ public class NotesController : ControllerBase
         [FromBody] UpdateNoteRequest request,
         CancellationToken cancellationToken)
     {
-        var userId = GetCurrentUserId();
-        if (userId is null)
-            return this.UnauthorizedError("User identifier is missing.", ErrorCodes.AuthMissingUserId, "https://httpstatuses.com/401");
+        var userId = RequireCurrentUserId();
+        if (userId.Result is not null)
+            return userId.Result;
 
-        var dto = new UpdateNoteDto
-        {
-            Title = request.Title,
-            Content = request.Content,
-            Tags = request.Tags,
-            Category = request.Category,
-            Status = request.Status
-        };
-
-        var updated = await _noteService.UpdateAsync(id, userId, dto, cancellationToken);
+        var updated = await _noteService.UpdateAsync(id, userId.Value!, request.ToDto(), cancellationToken);
 
         return updated
             ? NoContent()
@@ -133,20 +114,11 @@ public class NotesController : ControllerBase
         [FromBody] PatchNoteRequest request,
         CancellationToken cancellationToken)
     {
-        var userId = GetCurrentUserId();
-        if (userId is null)
-            return this.UnauthorizedError("User identifier is missing.", ErrorCodes.AuthMissingUserId, "https://httpstatuses.com/401");
+        var userId = RequireCurrentUserId();
+        if (userId.Result is not null)
+            return userId.Result;
 
-        var dto = new PatchNoteDto
-        {
-            Title = request.Title,
-            Content = request.Content,
-            Tags = request.Tags,
-            Category = request.Category,
-            Status = request.Status
-        };
-
-        var updated = await _noteService.PatchAsync(id, userId, dto, cancellationToken);
+        var updated = await _noteService.PatchAsync(id, userId.Value!, request.ToDto(), cancellationToken);
 
         return updated
             ? NoContent()
@@ -160,27 +132,13 @@ public class NotesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> Delete(string id, CancellationToken cancellationToken)
     {
-        var userId = GetCurrentUserId();
-        if (userId is null)
-            return this.UnauthorizedError("User identifier is missing.", ErrorCodes.AuthMissingUserId, "https://httpstatuses.com/401");
+        var userId = RequireCurrentUserId();
+        if (userId.Result is not null)
+            return userId.Result;
 
-        var deleted = await _noteService.DeleteAsync(id, userId, cancellationToken);
+        var deleted = await _noteService.DeleteAsync(id, userId.Value!, cancellationToken);
         return deleted
             ? NoContent()
             : this.NotFoundError("The requested note was not found.", ErrorCodes.NotesNotFound, "https://httpstatuses.com/404");
     }
-
-    private string? GetCurrentUserId() => User.GetCurrentUserId();
-
-    private static NoteResponse Map(NoteDto dto) => new()
-    {
-        Id = dto.Id,
-        Title = dto.Title,
-        Content = dto.Content,
-        Tags = dto.Tags,
-        Category = dto.Category,
-        Status = dto.Status,
-        CreatedAtUtc = dto.CreatedAtUtc,
-        UpdatedAtUtc = dto.UpdatedAtUtc
-    };
 }

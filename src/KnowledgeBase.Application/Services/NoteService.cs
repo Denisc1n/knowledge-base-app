@@ -20,20 +20,7 @@ namespace KnowledgeBase.Application.Services
         {
             var now = DateTime.UtcNow;
 
-            var note = new Note
-            {
-                UserId = userId,
-                Title = dto.Title.Trim(),
-                Content = dto.Content.Trim(),
-                Tags = [.. dto.Tags
-                    .Where(x => !string.IsNullOrWhiteSpace(x))
-                    .Select(x => x.Trim().ToLowerInvariant())
-                    .Distinct()],
-                Category = dto.Category.Trim(),
-                Status = dto.Status,
-                CreatedAtUtc = now,
-                UpdatedAtUtc = now
-            };
+            var note = Note.Create(userId, dto.Title, dto.Content, dto.Tags, dto.Category, dto.Status, now);
 
             var created = await _noteRepository.CreateAsync(note, cancellationToken);
 
@@ -61,44 +48,20 @@ namespace KnowledgeBase.Application.Services
             if (existing is null)
                 return false;
 
-            existing.Title = dto.Title.Trim();
-            existing.Content = dto.Content.Trim();
-            existing.Tags = dto.Tags
-                .Where(x => !string.IsNullOrWhiteSpace(x))
-                .Select(x => x.Trim().ToLowerInvariant())
-                .Distinct()
-                .ToList();
-            existing.Category = dto.Category.Trim();
-            existing.Status = dto.Status;
-            existing.UpdatedAtUtc = DateTime.UtcNow;
+            existing.ApplyUpdate(dto.Title, dto.Content, dto.Tags, dto.Category, dto.Status, DateTime.UtcNow);
 
             return await _noteRepository.UpdateAsync(existing, cancellationToken);
         }
 
         public async Task<bool> PatchAsync(string id, string userId, PatchNoteDto dto, CancellationToken cancellationToken = default)
         {
-            var normalizedTitle = dto.Title?.Trim();
-            var normalizedContent = dto.Content?.Trim();
-            var normalizedCategory = dto.Category?.Trim();
-
-            List<string>? normalizedTags = null;
-
-            if (dto.Tags is not null)
-            {
-                normalizedTags = dto.Tags
-                    .Where(x => !string.IsNullOrWhiteSpace(x))
-                    .Select(x => x.Trim().ToLowerInvariant())
-                    .Distinct()
-                    .ToList();
-            }
-
             return await _noteRepository.PatchAsync(
                 id,
                 userId,
-                normalizedTitle,
-                normalizedContent,
-                normalizedTags,
-                normalizedCategory,
+                Note.NormalizeOptional(dto.Title),
+                Note.NormalizeOptional(dto.Content),
+                Note.NormalizeOptionalTags(dto.Tags),
+                Note.NormalizeOptional(dto.Category),
                 dto.Status,
                 DateTime.UtcNow,
                 cancellationToken);
