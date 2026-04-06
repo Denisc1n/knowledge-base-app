@@ -61,7 +61,7 @@ builder.Services.AddApplicationServices();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy("API is running."))
-    .AddCheck<MongoHealthCheck>("mongo");
+    .AddCheck<MongoHealthCheck>("mongo", timeout: TimeSpan.FromSeconds(5));
 
 var jwtSettings = builder.Configuration
     .GetSection(JwtSettings.SectionName)

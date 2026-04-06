@@ -6,6 +6,8 @@ using KnowledgeBase.Infrastructure.Repositories;
 using KnowledgeBase.Infrastructure.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using MongoDB.Driver;
 
 namespace KnowledgeBase.Infrastructure.DependencyInjection;
 
@@ -22,6 +24,17 @@ public static class InfrastructureServiceRegistration
         services.Configure<RefreshTokenSettings>(
             configuration.GetSection(RefreshTokenSettings.SectionName));
 
+        services.AddSingleton<IMongoClient>(serviceProvider =>
+        {
+            var settings = serviceProvider.GetRequiredService<IOptions<MongoDbSettings>>().Value;
+            var clientSettings = MongoClientSettings.FromConnectionString(settings.ConnectionString);
+
+            clientSettings.ServerSelectionTimeout = TimeSpan.FromSeconds(5);
+            clientSettings.ConnectTimeout = TimeSpan.FromSeconds(5);
+            clientSettings.SocketTimeout = TimeSpan.FromSeconds(5);
+
+            return new MongoClient(clientSettings);
+        });
         services.AddSingleton<MongoContext>();
         services.AddScoped<IAuthAuditReader, AuthAuditReader>();
         services.AddScoped<IUserReader, UserReader>();

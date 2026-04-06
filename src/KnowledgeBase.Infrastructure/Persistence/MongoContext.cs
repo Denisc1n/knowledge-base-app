@@ -9,10 +9,9 @@ public class MongoContext
     private readonly IMongoDatabase _database;
     private readonly MongoDbSettings _settings;
 
-    public MongoContext(IOptions<MongoDbSettings> options)
+    public MongoContext(IOptions<MongoDbSettings> options, IMongoClient client)
     {
         _settings = options.Value;
-        var client = new MongoClient(_settings.ConnectionString);
         _database = client.GetDatabase(_settings.DatabaseName);
         EnsureIndexes();
     }
