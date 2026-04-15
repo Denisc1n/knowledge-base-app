@@ -8,6 +8,7 @@ using KnowledgeBase.Application.Exceptions;
 using KnowledgeBase.Application.Queries;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace KnowledgeBase.Api.Controllers;
 
@@ -25,6 +26,7 @@ public class AdminUsersController : ApiControllerBase
 
     [Authorize(Policy = AuthorizationPolicies.MasterAdminOnly)]
     [HttpPost]
+    [EnableRateLimiting(RateLimitPolicies.AuthSensitive)]
     [ProducesResponseType(typeof(UserResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]

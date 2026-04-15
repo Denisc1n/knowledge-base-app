@@ -81,6 +81,56 @@ public class VersioningAndHealthTests : IClassFixture<TestApiFactory>
     }
 
     [Fact]
+    public async Task VersionedAuthLoginRoute_WhenLimitExceeded_ReturnsTooManyRequests()
+    {
+        using var factory = new TestApiFactory();
+        using var client = factory.CreateClient();
+
+        factory.AuthServiceSubstitute.LoginAsync(
+                Arg.Any<LoginDto>(),
+                Arg.Any<SessionContextDto>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new LoginResultDto
+            {
+                AccessToken = "jwt-token",
+                ExpiresAtUtc = DateTime.UtcNow.AddMinutes(10),
+                RefreshToken = "refresh-token",
+                RefreshTokenExpiresAtUtc = DateTime.UtcNow.AddDays(7),
+                User = new UserDto
+                {
+                    Id = "user-1",
+                    FirstName = "Test",
+                    LastName = "User",
+                    Username = "test.user",
+                    Email = "test@example.com",
+                    IsActive = true,
+                    Role = UserRole.User
+                }
+            });
+
+        for (var i = 0; i < 5; i++)
+        {
+            using var allowedResponse = await client.PostAsJsonAsync("/api/v1/auth/login", new
+            {
+                username = "test.user",
+                password = "Password123!"
+            });
+
+            Assert.Equal(HttpStatusCode.OK, allowedResponse.StatusCode);
+        }
+
+        using var limitedResponse = await client.PostAsJsonAsync("/api/v1/auth/login", new
+        {
+            username = "test.user",
+            password = "Password123!"
+        });
+        var payload = JsonNode.Parse(await limitedResponse.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, limitedResponse.StatusCode);
+        Assert.Equal("auth.rate_limited", payload?["code"]?.GetValue<string>());
+    }
+
+    [Fact]
     public async Task VersionedNotesRoute_ReturnsOk()
     {
         _factory.NoteServiceSubstitute.GetAllAsync("test-user-id", Arg.Any<CancellationToken>())

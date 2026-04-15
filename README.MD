@@ -105,6 +105,30 @@ The API uses JWT access tokens plus refresh sessions.
 - access tokens also carry a user `SecurityStamp`, so tokens issued before a password reset or role change become invalid
 - all API endpoints use the `v1` route convention, for example `/api/v1/auth/login` and `/api/v1/notes`
 
+### Auth Abuse Protection
+
+Sensitive authentication endpoints are rate-limited to reduce brute-force and abuse scenarios.
+
+Protected endpoints include:
+
+- `/api/v1/auth/signup`
+- `/api/v1/auth/login`
+- `/api/v1/auth/refresh`
+- `/api/v1/auth/reset-password`
+- `/api/v1/admin/users` `POST`
+
+Current policy:
+
+- 5 requests per minute
+- partitioned by client IP / forwarded IP
+- no request queueing
+
+When the limit is exceeded, the API returns:
+
+- `429 Too Many Requests`
+- `application/problem+json`
+- error code: `auth.rate_limited`
+
 ### Roles
 
 Authorization is role-based.
@@ -405,6 +429,7 @@ For a React browser client:
 - keep the access token in memory, not local storage
 - use the `RefreshAfterUtc` value from login/refresh responses to trigger silent refresh before expiry
 - on a `401`, attempt one refresh and then retry the original request once
+- on a `429`, do not retry immediately; show a short wait message and back off before trying again
 - if `reset-password` succeeds, clear any in-memory access token and redirect the user to log in again
 
 ## Solution Layout

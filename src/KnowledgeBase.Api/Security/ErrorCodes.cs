@@ -2,6 +2,7 @@ namespace KnowledgeBase.Api.Security;
 
 public static class ErrorCodes
 {
+    public const string AuthRateLimited = "auth.rate_limited";
     public const string AuthDuplicateUser = "auth.duplicate_user";
     public const string AuthInvalidCredentials = "auth.invalid_credentials";
     public const string AuthRefreshTokenMissing = "auth.refresh_token_missing";

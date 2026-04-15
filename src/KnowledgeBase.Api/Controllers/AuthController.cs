@@ -8,6 +8,7 @@ using KnowledgeBase.Application.Exceptions;
 using KnowledgeBase.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 
 namespace KnowledgeBase.Api.Controllers;
@@ -32,6 +33,7 @@ public class AuthController : ApiControllerBase
 
     [HttpPost("signup")]
     [AllowAnonymous]
+    [EnableRateLimiting(RateLimitPolicies.AuthSensitive)]
     [ProducesResponseType(typeof(UserResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Signup(
@@ -55,6 +57,7 @@ public class AuthController : ApiControllerBase
 
     [HttpPost("login")]
     [AllowAnonymous]
+    [EnableRateLimiting(RateLimitPolicies.AuthSensitive)]
     [ProducesResponseType(typeof(LoginResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Login(
@@ -87,6 +90,7 @@ public class AuthController : ApiControllerBase
 
     [HttpPost("refresh")]
     [AllowAnonymous]
+    [EnableRateLimiting(RateLimitPolicies.AuthSensitive)]
     [ProducesResponseType(typeof(LoginResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Refresh(
@@ -194,6 +198,7 @@ public class AuthController : ApiControllerBase
 
     [Authorize(Policy = AuthorizationPolicies.AuthenticatedUser)]
     [HttpPost("reset-password")]
+    [EnableRateLimiting(RateLimitPolicies.AuthSensitive)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]

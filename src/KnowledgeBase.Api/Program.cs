@@ -11,6 +11,7 @@ using KnowledgeBase.Infrastructure.DependencyInjection;
 using KnowledgeBase.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
@@ -18,6 +19,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using System.Security.Claims;
 using System.Text;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -66,6 +68,46 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy("API is running."))
     .AddCheck<MongoHealthCheck>("mongo", timeout: TimeSpan.FromSeconds(5));
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        context.HttpContext.Response.ContentType = "application/problem+json";
+        context.HttpContext.Response.Headers[ApiVersioningConventions.SupportedVersionsHeader] = "1.0";
+
+        await context.HttpContext.Response.WriteAsJsonAsync(new ProblemDetails
+        {
+            Status = StatusCodes.Status429TooManyRequests,
+            Title = "Too Many Requests",
+            Detail = "Too many authentication attempts. Please wait before trying again.",
+            Type = "https://httpstatuses.com/429",
+            Instance = context.HttpContext.Request.Path
+        }.WithCode(ErrorCodes.AuthRateLimited), cancellationToken);
+    };
+
+    options.AddPolicy(RateLimitPolicies.AuthSensitive, httpContext =>
+    {
+        var forwardedFor = httpContext.Request.Headers["X-Forwarded-For"].ToString();
+        var ipAddress = string.IsNullOrWhiteSpace(forwardedFor)
+            ? httpContext.Connection.RemoteIpAddress?.ToString()
+            : forwardedFor;
+        var partitionKey = string.IsNullOrWhiteSpace(ipAddress)
+            ? "unknown"
+            : ipAddress;
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            });
+    });
+});
 
 var jwtSettings = builder.Configuration
     .GetSection(JwtSettings.SectionName)
@@ -236,6 +278,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("frontend");
 app.UseHttpsRedirection();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapHealthChecks("/health", new HealthCheckOptions
