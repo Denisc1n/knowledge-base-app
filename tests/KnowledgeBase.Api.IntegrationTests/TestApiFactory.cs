@@ -15,9 +15,26 @@ namespace KnowledgeBase.Api.IntegrationTests;
 
 public class TestApiFactory : WebApplicationFactory<Program>
 {
+    private const string TestJwtIssuer = "KnowledgeBase.Api.Tests";
+    private const string TestJwtAudience = "KnowledgeBase.Api.Tests.Client";
+    private const string TestJwtSecretKey = "integration-tests-secret-key-1234567890";
+    private const string TestMongoConnectionString = "mongodb://localhost:27017";
+    private const string TestMongoDatabaseName = "knowledgebase-tests";
+
     public IAuthService AuthServiceSubstitute { get; } = Substitute.For<IAuthService>();
     public INoteService NoteServiceSubstitute { get; } = Substitute.For<INoteService>();
     public IAdminService AdminServiceSubstitute { get; } = Substitute.For<IAdminService>();
+
+    public TestApiFactory()
+    {
+        Environment.SetEnvironmentVariable("Jwt__Issuer", TestJwtIssuer);
+        Environment.SetEnvironmentVariable("Jwt__Audience", TestJwtAudience);
+        Environment.SetEnvironmentVariable("Jwt__SecretKey", TestJwtSecretKey);
+        Environment.SetEnvironmentVariable("Jwt__ExpirationMinutes", "60");
+        Environment.SetEnvironmentVariable("MongoDb__ConnectionString", TestMongoConnectionString);
+        Environment.SetEnvironmentVariable("MongoDb__DatabaseName", TestMongoDatabaseName);
+        Environment.SetEnvironmentVariable("BootstrapAdmin__Enabled", "false");
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -27,12 +44,12 @@ public class TestApiFactory : WebApplicationFactory<Program>
         {
             configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Jwt:Issuer"] = "KnowledgeBase.Api.Tests",
-                ["Jwt:Audience"] = "KnowledgeBase.Api.Tests.Client",
-                ["Jwt:SecretKey"] = "integration-tests-secret-key-1234567890",
+                ["Jwt:Issuer"] = TestJwtIssuer,
+                ["Jwt:Audience"] = TestJwtAudience,
+                ["Jwt:SecretKey"] = TestJwtSecretKey,
                 ["Jwt:ExpirationMinutes"] = "60",
-                ["MongoDb:ConnectionString"] = "mongodb://localhost:27017",
-                ["MongoDb:DatabaseName"] = "knowledgebase-tests",
+                ["MongoDb:ConnectionString"] = TestMongoConnectionString,
+                ["MongoDb:DatabaseName"] = TestMongoDatabaseName,
                 ["BootstrapAdmin:Enabled"] = "false"
             });
         });
