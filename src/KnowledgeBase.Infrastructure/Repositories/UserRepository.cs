@@ -1,5 +1,6 @@
 using KnowledgeBase.Domain.Abstractions;
 using KnowledgeBase.Domain.Entities;
+using KnowledgeBase.Domain.Enums;
 using KnowledgeBase.Infrastructure.Persistence;
 using MongoDB.Driver;
 
@@ -38,6 +39,13 @@ public class UserRepository : IUserRepository
     {
         return await _context.Users
             .Find(x => x.Email == email)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<User?> GetByRoleAsync(UserRole role, CancellationToken cancellationToken = default)
+    {
+        return await _context.Users
+            .Find(x => x.Role == role)
             .FirstOrDefaultAsync(cancellationToken);
     }
 

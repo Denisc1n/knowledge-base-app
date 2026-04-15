@@ -20,11 +20,19 @@ public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
+        var role = Request.Headers.TryGetValue("X-Test-Role", out var requestedRole)
+            ? requestedRole.ToString()
+            : "Admin";
+
+        var userId = Request.Headers.TryGetValue("X-Test-UserId", out var requestedUserId)
+            ? requestedUserId.ToString()
+            : "test-user-id";
+
         var claims = new[]
         {
-            new Claim(ClaimTypes.NameIdentifier, "test-user-id"),
+            new Claim(ClaimTypes.NameIdentifier, userId),
             new Claim(ClaimTypes.Name, "test-user"),
-            new Claim(ClaimTypes.Role, "Admin")
+            new Claim(ClaimTypes.Role, role)
         };
 
         var identity = new ClaimsIdentity(claims, SchemeName);

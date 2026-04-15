@@ -3,13 +3,17 @@ using KnowledgeBase.Api.HealthChecks;
 using KnowledgeBase.Api.Extensions;
 using KnowledgeBase.Api.Observability;
 using KnowledgeBase.Api.Security;
+using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Domain.Abstractions;
+using KnowledgeBase.Domain.Entities;
+using KnowledgeBase.Domain.Enums;
 using KnowledgeBase.Infrastructure.DependencyInjection;
 using KnowledgeBase.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using System.Security.Claims;
@@ -184,7 +188,16 @@ builder.Services.AddAuthorization(options =>
     {
         policy.RequireAuthenticatedUser();
         policy.RequireClaim(ClaimTypes.NameIdentifier);
-        policy.RequireRole("Admin");
+        policy.RequireAssertion(context =>
+            context.User.IsInRole(UserRole.Admin.ToString()) ||
+            context.User.IsInRole(UserRole.MasterAdmin.ToString()));
+    });
+
+    options.AddPolicy(AuthorizationPolicies.MasterAdminOnly, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.RequireClaim(ClaimTypes.NameIdentifier);
+        policy.RequireRole(UserRole.MasterAdmin.ToString());
     });
 });
 
@@ -201,6 +214,11 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    await EnsureBootstrapMasterAdminAsync(app.Services, app.Logger, app.Lifetime.ApplicationStopping);
+}
 
 app.UseExceptionHandler();
 app.Use(async (context, next) =>
@@ -237,5 +255,74 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 app.MapControllers();
 
 app.Run();
+
+static async Task EnsureBootstrapMasterAdminAsync(
+    IServiceProvider services,
+    ILogger logger,
+    CancellationToken cancellationToken)
+{
+    using var scope = services.CreateScope();
+    var settings = scope.ServiceProvider
+        .GetRequiredService<IOptions<BootstrapAdminSettings>>()
+        .Value;
+
+    if (!settings.Enabled)
+        return;
+
+    if (string.IsNullOrWhiteSpace(settings.FirstName) ||
+        string.IsNullOrWhiteSpace(settings.LastName) ||
+        string.IsNullOrWhiteSpace(settings.Username) ||
+        string.IsNullOrWhiteSpace(settings.Email) ||
+        string.IsNullOrWhiteSpace(settings.Password))
+    {
+        throw new InvalidOperationException("Bootstrap admin settings are incomplete.");
+    }
+
+    var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+    var passwordHasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
+
+    var existingMasterAdmin = await userRepository.GetByRoleAsync(UserRole.MasterAdmin, cancellationToken);
+    if (existingMasterAdmin is not null)
+        return;
+
+    var normalizedUsername = User.NormalizeUsername(settings.Username);
+    var normalizedEmail = User.NormalizeEmail(settings.Email);
+
+    var existingByUsername = await userRepository.GetByUsernameAsync(normalizedUsername, cancellationToken);
+    var existingByEmail = await userRepository.GetByEmailAsync(normalizedEmail, cancellationToken);
+
+    if (existingByUsername is not null && existingByEmail is not null && existingByUsername.Id != existingByEmail.Id)
+        throw new InvalidOperationException("Bootstrap admin username and email refer to different users.");
+
+    var bootstrapUser = existingByUsername ?? existingByEmail;
+
+    if (bootstrapUser is null)
+    {
+        bootstrapUser = User.Create(
+            settings.FirstName,
+            settings.LastName,
+            settings.Username,
+            settings.Email,
+            passwordHasher.Hash(settings.Password),
+            DateTime.UtcNow,
+            UserRole.MasterAdmin);
+
+        await userRepository.CreateAsync(bootstrapUser, cancellationToken);
+        logger.LogInformation("Bootstrap master admin {Username} was created.", bootstrapUser.Username);
+        return;
+    }
+
+    bootstrapUser.FirstName = settings.FirstName.Trim();
+    bootstrapUser.LastName = settings.LastName.Trim();
+    bootstrapUser.Username = normalizedUsername;
+    bootstrapUser.Email = normalizedEmail;
+    bootstrapUser.PasswordHash = passwordHasher.Hash(settings.Password);
+    bootstrapUser.IsActive = true;
+    bootstrapUser.Role = UserRole.MasterAdmin;
+    bootstrapUser.RotateSecurityStamp();
+
+    await userRepository.UpdateAsync(bootstrapUser, cancellationToken);
+    logger.LogInformation("Existing user {Username} was promoted to bootstrap master admin.", bootstrapUser.Username);
+}
 
 public partial class Program;

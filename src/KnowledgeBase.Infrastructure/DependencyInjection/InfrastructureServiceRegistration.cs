@@ -23,6 +23,8 @@ public static class InfrastructureServiceRegistration
             configuration.GetSection(JwtSettings.SectionName));
         services.Configure<RefreshTokenSettings>(
             configuration.GetSection(RefreshTokenSettings.SectionName));
+        services.Configure<BootstrapAdminSettings>(
+            configuration.GetSection(BootstrapAdminSettings.SectionName));
 
         services.AddSingleton<IMongoClient>(serviceProvider =>
         {

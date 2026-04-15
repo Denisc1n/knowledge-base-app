@@ -4,6 +4,7 @@ using KnowledgeBase.Application.Exceptions;
 using KnowledgeBase.Application.Security;
 using KnowledgeBase.Domain.Abstractions;
 using KnowledgeBase.Domain.Entities;
+using KnowledgeBase.Domain.Enums;
 
 namespace KnowledgeBase.Application.Services;
 
@@ -236,7 +237,7 @@ public class AuthService : IAuthService
         Username = user.Username,
         Email = user.Email,
         IsActive = user.IsActive,
-        IsAdmin = user.IsAdmin
+        Role = user.Role
     };
 
     private async Task<LoginResultDto> IssueTokensAsync(

@@ -1,12 +1,10 @@
-namespace KnowledgeBase.Api.Contracts.Auth;
+namespace KnowledgeBase.Api.Contracts.Admin;
 
-public class UserResponse
+public class CreateAdminUserRequest
 {
-    public string Id { get; set; } = default!;
     public string FirstName { get; set; } = default!;
     public string LastName { get; set; } = default!;
     public string Username { get; set; } = default!;
     public string Email { get; set; } = default!;
-    public bool IsActive { get; set; }
-    public string Role { get; set; } = default!;
+    public string Password { get; set; } = default!;
 }

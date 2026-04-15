@@ -2,6 +2,7 @@ using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Application.DTOs;
 using KnowledgeBase.Application.Queries;
 using KnowledgeBase.Domain.Entities;
+using KnowledgeBase.Domain.Enums;
 using KnowledgeBase.Infrastructure.Persistence;
 using MongoDB.Driver;
 using QuerySortDirection = KnowledgeBase.Application.Queries.SortDirection;
@@ -34,7 +35,8 @@ public class UserReader : IUserReader
                 LastName = x.LastName,
                 Email = x.Email,
                 Status = x.IsActive,
-                RegisteredAt = x.CreatedAtUtc
+                RegisteredAt = x.CreatedAtUtc,
+                Role = x.Role.ToString()
             })
             .Skip(skip)
             .Limit(query.PageSize)
@@ -49,7 +51,11 @@ public class UserReader : IUserReader
             filters.Add(Builders<User>.Filter.Eq(x => x.IsActive, query.IsActive.Value));
 
         if (query.IsAdmin.HasValue)
-            filters.Add(Builders<User>.Filter.Eq(x => x.IsAdmin, query.IsAdmin.Value));
+        {
+            filters.Add(query.IsAdmin.Value
+                ? Builders<User>.Filter.Ne(x => x.Role, UserRole.User)
+                : Builders<User>.Filter.Eq(x => x.Role, UserRole.User));
+        }
 
         if (query.CreatedDate.HasValue)
         {
@@ -95,12 +101,12 @@ public class UserReader : IUserReader
                 .Descending(x => x.IsActive)
                 .Descending(x => x.CreatedAtUtc)
                 .Descending(x => x.Id),
-            (UserSortBy.IsAdmin, QuerySortDirection.Asc) => sortBuilder
-                .Ascending(x => x.IsAdmin)
+            (UserSortBy.Role, QuerySortDirection.Asc) => sortBuilder
+                .Ascending(x => x.Role)
                 .Ascending(x => x.CreatedAtUtc)
                 .Ascending(x => x.Id),
-            (UserSortBy.IsAdmin, QuerySortDirection.Desc) => sortBuilder
-                .Descending(x => x.IsAdmin)
+            (UserSortBy.Role, QuerySortDirection.Desc) => sortBuilder
+                .Descending(x => x.Role)
                 .Descending(x => x.CreatedAtUtc)
                 .Descending(x => x.Id),
             (UserSortBy.CreatedDate, QuerySortDirection.Asc) => sortBuilder

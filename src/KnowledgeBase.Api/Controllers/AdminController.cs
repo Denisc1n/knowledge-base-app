@@ -4,6 +4,7 @@ using KnowledgeBase.Api.Extensions;
 using KnowledgeBase.Api.Security;
 using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Application.DTOs;
+using KnowledgeBase.Application.Exceptions;
 using KnowledgeBase.Application.Queries;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,13 +14,37 @@ namespace KnowledgeBase.Api.Controllers;
 [ApiController]
 [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
 [Route("api/v1/admin/users")]
-public class AdminUsersController : ControllerBase
+public class AdminUsersController : ApiControllerBase
 {
     private readonly IAdminService _adminService;
 
     public AdminUsersController(IAdminService adminService)
     {
         _adminService = adminService;
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.MasterAdminOnly)]
+    [HttpPost]
+    [ProducesResponseType(typeof(UserResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> CreateAdmin(
+        [FromBody] CreateAdminUserRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var created = await _adminService.CreateAdminAsync(request.ToDto(), cancellationToken);
+            return StatusCode(StatusCodes.Status201Created, created.ToResponse());
+        }
+        catch (DuplicateUserException ex)
+        {
+            return this.ConflictError(
+                ex.Message,
+                code: ErrorCodes.AuthDuplicateUser,
+                type: "https://httpstatuses.com/409",
+                field: ex.FieldName);
+        }
     }
 
     [HttpGet]
@@ -33,6 +58,60 @@ public class AdminUsersController : ControllerBase
         return Ok(users);
     }
 
+    [Authorize(Policy = AuthorizationPolicies.MasterAdminOnly)]
+    [HttpPost("{id}/promote-admin")]
+    [ProducesResponseType(typeof(UserResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> PromoteToAdmin(
+        string id,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var updated = await _adminService.PromoteToAdminAsync(id, cancellationToken);
+            if (updated is null)
+                return this.NotFoundError("The requested user was not found.", ErrorCodes.UsersNotFound, "https://httpstatuses.com/404");
+
+            return Ok(updated.ToResponse());
+        }
+        catch (InvalidAdminOperationException ex)
+        {
+            return this.ConflictError(
+                ex.Message,
+                code: ErrorCodes.AdminInvalidOperation,
+                type: "https://httpstatuses.com/409");
+        }
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.MasterAdminOnly)]
+    [HttpPost("{id}/demote-admin")]
+    [ProducesResponseType(typeof(UserResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> DemoteAdmin(
+        string id,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var updated = await _adminService.DemoteAdminAsync(id, cancellationToken);
+            if (updated is null)
+                return this.NotFoundError("The requested user was not found.", ErrorCodes.UsersNotFound, "https://httpstatuses.com/404");
+
+            return Ok(updated.ToResponse());
+        }
+        catch (InvalidAdminOperationException ex)
+        {
+            return this.ConflictError(
+                ex.Message,
+                code: ErrorCodes.AdminInvalidOperation,
+                type: "https://httpstatuses.com/409");
+        }
+    }
+
     [HttpPatch("{id}/active")]
     [ProducesResponseType(typeof(UserResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -42,11 +121,21 @@ public class AdminUsersController : ControllerBase
         [FromBody] SetUserActiveStatusRequest request,
         CancellationToken cancellationToken)
     {
-        var updated = await _adminService.SetUserActiveStatusAsync(id, request.IsActive, cancellationToken);
-        if (updated is null)
-            return this.NotFoundError("The requested user was not found.", ErrorCodes.UsersNotFound, "https://httpstatuses.com/404");
+        try
+        {
+            var updated = await _adminService.SetUserActiveStatusAsync(id, request.IsActive, cancellationToken);
+            if (updated is null)
+                return this.NotFoundError("The requested user was not found.", ErrorCodes.UsersNotFound, "https://httpstatuses.com/404");
 
-        return Ok(updated.ToResponse());
+            return Ok(updated.ToResponse());
+        }
+        catch (InvalidAdminOperationException ex)
+        {
+            return this.ConflictError(
+                ex.Message,
+                code: ErrorCodes.AdminInvalidOperation,
+                type: "https://httpstatuses.com/409");
+        }
     }
 
     [HttpDelete("{userId}/notes/{noteId}")]

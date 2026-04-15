@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using KnowledgeBase.Application.DTOs;
+using KnowledgeBase.Domain.Enums;
 using NSubstitute;
 using Xunit;
 
@@ -65,7 +66,7 @@ public class VersioningAndHealthTests : IClassFixture<TestApiFactory>
                     Username = "test.user",
                     Email = "test@example.com",
                     IsActive = true,
-                    IsAdmin = false
+                    Role = UserRole.User
                 }
             });
 
