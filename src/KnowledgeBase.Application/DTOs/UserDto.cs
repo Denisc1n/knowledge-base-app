@@ -1,3 +1,5 @@
+using KnowledgeBase.Domain.Enums;
+
 namespace KnowledgeBase.Application.DTOs;
 
 public class UserDto
@@ -8,5 +10,5 @@ public class UserDto
     public string Username { get; set; } = default!;
     public string Email { get; set; } = default!;
     public bool IsActive { get; set; }
-    public bool IsAdmin { get; set; }
+    public UserRole Role { get; set; }
 }

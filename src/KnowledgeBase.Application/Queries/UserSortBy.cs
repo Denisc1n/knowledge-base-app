@@ -6,5 +6,5 @@ public enum UserSortBy
     FirstName = 1,
     LastName = 2,
     IsActive = 3,
-    IsAdmin = 4
+    Role = 4
 }

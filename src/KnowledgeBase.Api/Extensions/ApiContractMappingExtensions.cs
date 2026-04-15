@@ -1,3 +1,4 @@
+using KnowledgeBase.Api.Contracts.Admin;
 using KnowledgeBase.Api.Contracts.Auth;
 using KnowledgeBase.Api.Contracts.Notes;
 using KnowledgeBase.Application.DTOs;
@@ -18,6 +19,15 @@ public static class ApiContractMappingExtensions
     public static LoginDto ToDto(this LoginRequest request) => new()
     {
         Username = request.Username,
+        Password = request.Password
+    };
+
+    public static CreateAdminUserDto ToDto(this CreateAdminUserRequest request) => new()
+    {
+        FirstName = request.FirstName,
+        LastName = request.LastName,
+        Username = request.Username,
+        Email = request.Email,
         Password = request.Password
     };
 
@@ -76,7 +86,7 @@ public static class ApiContractMappingExtensions
         Username = dto.Username,
         Email = dto.Email,
         IsActive = dto.IsActive,
-        IsAdmin = dto.IsAdmin
+        Role = dto.Role.ToString()
     };
 
     public static SessionResponse ToResponse(this SessionDto dto) => new()

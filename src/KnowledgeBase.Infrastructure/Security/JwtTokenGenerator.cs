@@ -35,8 +35,7 @@ public class JwtTokenGenerator : IJwtTokenGenerator
             new(ClaimTypes.Email, user.Email)
         };
 
-        if (user.IsAdmin)
-            claims.Add(new Claim(ClaimTypes.Role, "Admin"));
+        claims.Add(new Claim(ClaimTypes.Role, user.Role.ToString()));
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_settings.SecretKey));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);

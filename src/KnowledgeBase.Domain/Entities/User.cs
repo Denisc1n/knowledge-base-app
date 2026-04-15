@@ -1,5 +1,6 @@
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
+using KnowledgeBase.Domain.Enums;
 
 namespace KnowledgeBase.Domain.Entities;
 
@@ -25,7 +26,8 @@ public class User
 
     public bool IsActive { get; set; } = true;
 
-    public bool IsAdmin { get; set; }
+    [BsonRepresentation(BsonType.String)]
+    public UserRole Role { get; set; }
 
     public static User Create(
         string firstName,
@@ -33,7 +35,8 @@ public class User
         string username,
         string email,
         string passwordHash,
-        DateTime createdAtUtc)
+        DateTime createdAtUtc,
+        UserRole role = UserRole.User)
     {
         return new User
         {
@@ -45,7 +48,7 @@ public class User
             SecurityStamp = CreateSecurityStamp(),
             CreatedAtUtc = createdAtUtc,
             IsActive = true,
-            IsAdmin = false
+            Role = role
         };
     }
 

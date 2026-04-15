@@ -4,6 +4,7 @@ using KnowledgeBase.Application.Exceptions;
 using KnowledgeBase.Application.Services;
 using KnowledgeBase.Domain.Abstractions;
 using KnowledgeBase.Domain.Entities;
+using KnowledgeBase.Domain.Enums;
 using NSubstitute;
 
 namespace KnowledgeBase.Application.UnitTests;
@@ -75,14 +76,14 @@ public class AuthServiceTests
                 u.PasswordHash == "hashed-password" &&
                 !string.IsNullOrWhiteSpace(u.SecurityStamp) &&
                 u.IsActive &&
-                !u.IsAdmin),
+                u.Role == UserRole.User),
             Arg.Any<CancellationToken>());
 
         Assert.Equal("user-1", result.Id);
         Assert.Equal("jane.doe", result.Username);
         Assert.Equal("jane@example.com", result.Email);
         Assert.True(result.IsActive);
-        Assert.False(result.IsAdmin);
+        Assert.Equal(UserRole.User, result.Role);
     }
 
     [Fact]
@@ -117,7 +118,7 @@ public class AuthServiceTests
             PasswordHash = "hash",
             SecurityStamp = "stamp-1",
             IsActive = true,
-            IsAdmin = true
+            Role = UserRole.Admin
         };
 
         _userRepository.GetByUsernameAsync("jane", Arg.Any<CancellationToken>()).Returns(user);
@@ -147,7 +148,7 @@ public class AuthServiceTests
         Assert.Equal("jwt-token", result.AccessToken);
         Assert.Equal("refresh-token", result.RefreshToken);
         Assert.Equal("user-2", result.User.Id);
-        Assert.True(result.User.IsAdmin);
+        Assert.Equal(UserRole.Admin, result.User.Role);
         await _refreshSessionRepository.Received(1).CreateAsync(
             Arg.Is<RefreshSession>(s =>
                 s.UserId == "user-2" &&
