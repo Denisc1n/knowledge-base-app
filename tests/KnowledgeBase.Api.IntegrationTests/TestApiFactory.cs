@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -20,7 +21,21 @@ public class TestApiFactory : WebApplicationFactory<Program>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Development");
+        builder.UseEnvironment("Testing");
+
+        builder.ConfigureAppConfiguration((_, configBuilder) =>
+        {
+            configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Jwt:Issuer"] = "KnowledgeBase.Api.Tests",
+                ["Jwt:Audience"] = "KnowledgeBase.Api.Tests.Client",
+                ["Jwt:SecretKey"] = "integration-tests-secret-key-1234567890",
+                ["Jwt:ExpirationMinutes"] = "60",
+                ["MongoDb:ConnectionString"] = "mongodb://localhost:27017",
+                ["MongoDb:DatabaseName"] = "knowledgebase-tests",
+                ["BootstrapAdmin:Enabled"] = "false"
+            });
+        });
 
         builder.ConfigureServices(services =>
         {
