@@ -10,6 +10,7 @@ The application allows authenticated users to:
 - manage their own notes
 - search and organize notes
 - keep long-lived browser sessions through access-token refresh
+- administer users through role-based access control
 
 ## Architecture
 
@@ -57,7 +58,7 @@ The backend now uses the same read/write split pattern for users and notes:
 The domain layer is no longer just passive data classes.
 
 - `Note` owns its normalization and update rules
-- `User` owns username/email normalization and security-stamp/password state transitions
+- `User` owns username/email normalization, role state, and security-stamp/password state transitions
 - application services orchestrate use cases, but the low-level business rules for entity state live closer to the entities themselves
 
 This keeps services smaller and makes entity behavior easier to test and reason about.
@@ -101,8 +102,18 @@ The API uses JWT access tokens plus refresh sessions.
 - the browser receives the refresh token through an `HttpOnly` cookie
 - the React frontend should call auth endpoints with `credentials: 'include'`
 - refresh-token rotation is used, so each refresh invalidates the previous refresh token
-- access tokens also carry a user `SecurityStamp`, so tokens issued before a password reset become invalid
+- access tokens also carry a user `SecurityStamp`, so tokens issued before a password reset or role change become invalid
 - all API endpoints use the `v1` route convention, for example `/api/v1/auth/login` and `/api/v1/notes`
+
+### Roles
+
+Authorization is role-based.
+
+- `User`: regular authenticated user
+- `Admin`: can access admin user-management endpoints
+- `MasterAdmin`: can create admins and manage admin role changes
+
+The API returns the current user's role as part of auth responses.
 
 ### Auth Endpoints
 
@@ -137,6 +148,52 @@ On success, the API:
 - clears the refresh-token cookie
 
 Because access tokens are validated against the current `SecurityStamp`, any previously issued access token stops working after the password reset. The user must log in again with the new password.
+
+## Admin Features
+
+The API includes administrative user management endpoints under `/api/v1/admin/users`.
+
+### Admin Endpoints
+
+| Method | Endpoint | Required Role | Description |
+| --- | --- | --- | --- |
+| `POST` | `/api/v1/admin/users` | `MasterAdmin` | Create a new admin user |
+| `GET` | `/api/v1/admin/users` | `Admin` or `MasterAdmin` | List users with paging/filtering/sorting |
+| `POST` | `/api/v1/admin/users/{id}/promote-admin` | `MasterAdmin` | Promote a user to admin |
+| `POST` | `/api/v1/admin/users/{id}/demote-admin` | `MasterAdmin` | Demote an admin to user |
+| `PATCH` | `/api/v1/admin/users/{id}/active` | `Admin` or `MasterAdmin` | Activate or deactivate a user |
+| `DELETE` | `/api/v1/admin/users/{userId}/notes/{noteId}` | `Admin` or `MasterAdmin` | Delete a user's note |
+
+Some operations are protected by business rules:
+
+- the `MasterAdmin` role cannot be demoted
+- the `MasterAdmin` account cannot be deactivated
+- admin role changes revoke active sessions through security-stamp rotation/session revocation
+
+### Bootstrap Master Admin
+
+In Development, the API can bootstrap a master admin account at startup.
+
+Configuration section:
+
+```json
+{
+  "BootstrapAdmin": {
+    "Enabled": true,
+    "FirstName": "Root",
+    "LastName": "Admin",
+    "Username": "root.admin",
+    "Email": "root.admin@example.com",
+    "Password": "ChangeThisPassword123!"
+  }
+}
+```
+
+When enabled:
+
+- if no `MasterAdmin` exists, one is created
+- if a matching user already exists, that user is updated/promoted to `MasterAdmin`
+- this behavior is intended for local/dev bootstrap, not as a general runtime user-management mechanism
 
 ## Notes and Ownership
 
@@ -325,6 +382,20 @@ There is also API integration coverage for:
 - `v1` route availability
 - health endpoints
 - correlation-id response behavior
+- admin authorization boundaries
+
+## CI
+
+The repository includes a GitHub Actions CI workflow:
+
+- `.github/workflows/ci.yml`
+
+It runs on pushes and pull requests and validates:
+
+- restore
+- API build
+- application unit tests
+- API integration tests
 
 ## Frontend Integration Notes
 
